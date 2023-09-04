@@ -1,0 +1,123 @@
+name: binary release
+
+on:
+  pull_request:
+  release:
+    # "released" events are emitted either when directly be released or be edited from pre-released.
+    types: [prereleased, released]
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }} on ${{ matrix.os }} with ${{ matrix.gcc }}
+    env:
+      NAME: gitignore-in
+      ARCH: ${{ matrix.arch }}
+      OS: ${{ matrix.os }}
+      PACKAGE: ${{ matrix.package }}
+      GCC: ${{ matrix.gcc }}
+      CFLAGS: ${{ matrix.cflags }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - arch: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            package: musl-tools
+          - arch: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            package: gcc-aarch64-linux-gnu
+            gcc: aarch64-linux-gnu-gcc
+          - arch: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            package: gcc-aarch64-linux-gnu musl-tools
+            gcc: aarch64-linux-gnu-gcc
+            cflags: -U_FORTIFY_SOURCE
+          - arch: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            package: gcc-arm-linux-gnueabihf
+            gcc: arm-linux-gnueabihf-gcc
+          - arch: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+            package: gcc-arm-linux-gnueabihf musl-tools
+            gcc: arm-linux-gnueabihf-gcc
+            cflags: -U_FORTIFY_SOURCE
+          - arch: arm-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            package: gcc-arm-linux-gnueabihf
+            gcc: arm-linux-gnueabihf-gcc
+          - arch: arm-unknown-linux-musleabihf
+            os: ubuntu-latest
+            package: gcc-arm-linux-gnueabihf musl-tools
+            cflags: -U_FORTIFY_SOURCE
+            gcc: arm-linux-gnueabihf-gcc
+          # unresolved import `std::os::unix`
+          # `std::os::unix` is not available on Windows. I think there is a simple solution. I will not release Windows version until it is ready.
+          # - arch: x86_64-pc-windows-gnu
+          #   os: ubuntu-latest
+          #   package: gcc-mingw-w64-x86-64
+          - arch: x86_64-apple-darwin
+            os: macos-latest
+          - arch: aarch64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.arch }}
+      - name: Build target
+        run: |
+          if [[ $OS =~ ^.*ubuntu.*$ ]]; then
+            rustup target add $ARCH
+            sudo apt-get update && sudo apt-get install -y $PACKAGE
+            TARGET="$ARCH" CFLAGS="$CFLAGS" CC=$GCC cargo build --release --verbose --target $ARCH
+          elif [[ $OS =~ ^.*macos.*$ ]]; then
+            cargo build --release --verbose --target $ARCH
+          fi
+
+      - name: Compress
+        run: |
+          mkdir -p ./artifacts
+          if [[ $ARCH =~ ^.*windows.*$ ]]; then
+              EXEC=$NAME.exe
+          else
+              EXEC=$NAME
+          fi
+          if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
+            TAG=$GITHUB_REF_NAME
+          else
+            TAG=$GITHUB_SHA
+          fi
+          mv ./target/$ARCH/release/$EXEC ./$EXEC
+          tar -czf ./artifacts/$NAME-$ARCH-$TAG.tar.gz $EXEC
+
+      - if: startsWith(github.ref, 'refs/tags/')
+        name: Archive artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: result
+          path: |
+            ./artifacts
+
+  deploy:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: result
+          path: ./artifacts
+      - name: List
+        run: find ./artifacts
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./artifacts/*.tar.gz

@@ -1,0 +1,21 @@
+[package]
+name = "gitignore-in"
+version = "0.1.0"
+edition = "2021"
+authors = ["Yui Kitsu <kitsuyui+github@kitsuyui.com>"]
+description = "A command line tool for managing .gitignore files with gitignore.in"
+license = "BSD-3-Clause"
+readme = "README.md"
+repository = "https://github.com/gitignore-in/gitignore-in"
+documentation = "https://docs.rs/gitignore-in"
+categories = ["command-line-utilities"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = { version = "0.11.20", features = ["blocking"] }
+
+[dependencies.openssl]
+# This is required for reqwest to work standalone
+version = "0.10.57"
+features = ["vendored"]
