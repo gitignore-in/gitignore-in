@@ -6,4 +6,4 @@ function gi() { curl -sL https://www.toptal.com/developers/gitignore/api/\$@ ;}
 gibo dump Linux
 gibo dump Windows
 gibo dump macOS
-gibo dump Node
+gibo dump Rust

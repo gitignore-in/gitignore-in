@@ -1,0 +1,37 @@
+[registries.crates-io]
+protocol = "sparse"
+
+[target.'cfg(all())']
+rustflags = [
+    "-Wclippy::fallible_impl_from",
+    "-Dclippy::unwrap_used",
+    "-Dclippy::expect_used",
+]
+
+[alias]
+format = "fmt --all"
+format-check = "fmt --all -- --check"
+lint = "clippy --all-targets --all-features -- -D warnings"
+lint-fix = "clippy --all-targets --all-features --fix --allow-dirty --allow-staged"
+coverage = "llvm-cov --no-clean --lcov --output-path coverage.lcov"
+
+[target.arm-unknown-linux-musleabihf]
+linker = "arm-linux-gnueabihf-gcc"
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-lgcc"]
+
+[target.arm-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.armv7-unknown-linux-musleabihf]
+linker = "arm-linux-gnueabihf-gcc"
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-lgcc"]
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-gnu-gcc"
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-lgcc"]
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
