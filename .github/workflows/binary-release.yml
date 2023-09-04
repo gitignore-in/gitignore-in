@@ -10,7 +10,7 @@ jobs:
   build:
     name: build ${{ matrix.arch }} on ${{ matrix.os }} with ${{ matrix.gcc }}
     env:
-      NAME: gitignore.in
+      NAME: gitignore-in
       ARCH: ${{ matrix.arch }}
       OS: ${{ matrix.os }}
       PACKAGE: ${{ matrix.package }}
