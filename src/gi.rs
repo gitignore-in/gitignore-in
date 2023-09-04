@@ -26,3 +26,16 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
     };
     Ok(stdout)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gi_command() {
+        let result = gi_command("C++");
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert!(result.contains("### C++ ###"));
+    }
+}
