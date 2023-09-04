@@ -1,6 +1,6 @@
 use reqwest::blocking::Client;
 pub fn gi_command(target: &str) -> std::io::Result<String> {
-    // Reqest to https://www.toptal.com/developers/gitignore/api/{target}
+    // Request to https://www.toptal.com/developers/gitignore/api/{target}
     let url = format!("https://www.toptal.com/developers/gitignore/api/{}", target);
     let client = Client::new();
     let response = match client.get(url).send() {
