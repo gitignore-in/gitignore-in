@@ -26,3 +26,31 @@ pub fn parse_line(text: &str) -> GitIgnoreStatement {
     }
     GitIgnoreStatement::Meaningless(Meaningless::Content(text.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_text() {
+        let text = r#"# comment
+function meaningless() { echo "meaningless" }
+gibo dump C++
+gi C++
+echo hello
+"#;
+        let result = parse_text(text);
+        let expected = GitIgnoreIn {
+            content: vec![
+                GitIgnoreStatement::Comment(Comment::Content("# comment".to_string())),
+                GitIgnoreStatement::Meaningless(Meaningless::Content(
+                    r#"function meaningless() { echo "meaningless" }"#.to_string(),
+                )),
+                GitIgnoreStatement::Gibo(Gibo::Target("C++".to_string())),
+                GitIgnoreStatement::Gi(Gi::Target("C++".to_string())),
+                GitIgnoreStatement::Echo(Echo::Content("hello".to_string())),
+            ],
+        };
+        assert_eq!(result, expected);
+    }
+}
