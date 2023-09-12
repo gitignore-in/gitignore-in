@@ -74,3 +74,25 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
     let result = parser::parse_text(&content);
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mktemp::Temp;
+
+    #[test]
+    fn test_main() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        std::env::set_current_dir(temp_dir.as_path()).expect("failed to change current dir");
+        let result = main();
+        assert!(result.is_ok());
+        // check if the .gitignore.in file is in current directory
+        let path = Path::new(".gitignore.in");
+        assert!(path.exists());
+
+        // try again
+        let result = main();
+        assert!(result.is_ok());
+        assert!(path.exists());
+    }
+}
