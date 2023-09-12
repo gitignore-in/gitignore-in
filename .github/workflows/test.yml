@@ -26,6 +26,8 @@ jobs:
           wget https://github.com/simonwhitaker/gibo/releases/download/v3.0.7/gibo_Linux_x86_64.tar.gz
           tar -xzf gibo_Linux_x86_64.tar.gz
           cp gibo /usr/local/bin
+          chmod +x /usr/local/bin/gibo
+          gibo update
 
       - run: cargo test
 
@@ -73,6 +75,8 @@ jobs:
           wget https://github.com/simonwhitaker/gibo/releases/download/v3.0.7/gibo_Linux_x86_64.tar.gz
           tar -xzf gibo_Linux_x86_64.tar.gz
           cp gibo /usr/local/bin
+          chmod +x /usr/local/bin/gibo
+          gibo update
 
       - run: |
           cargo install cargo-llvm-cov || true
