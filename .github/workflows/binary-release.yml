@@ -48,11 +48,12 @@ jobs:
             os: ubuntu-latest
             package: gcc-arm-linux-gnueabihf
             gcc: arm-linux-gnueabihf-gcc
-          - arch: arm-unknown-linux-musleabihf
-            os: ubuntu-latest
-            package: gcc-arm-linux-gnueabihf musl-tools
-            cflags: -U_FORTIFY_SOURCE
-            gcc: arm-linux-gnueabihf-gcc
+          # Drop support for arm-unknown-linux-musleabihf
+          # - arch: arm-unknown-linux-musleabihf
+          #   os: ubuntu-latest
+          #   package: gcc-arm-linux-gnueabihf musl-tools
+          #   cflags: -U_FORTIFY_SOURCE
+          #   gcc: arm-linux-gnueabihf-gcc
           # unresolved import `std::os::unix`
           # `std::os::unix` is not available on Windows. I think there is a simple solution. I will not release Windows version until it is ready.
           # - arch: x86_64-pc-windows-gnu
