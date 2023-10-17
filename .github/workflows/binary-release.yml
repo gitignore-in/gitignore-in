@@ -97,7 +97,8 @@ jobs:
             TAG=$GITHUB_SHA
           fi
           mv ./target/$ARCH/release/$EXEC ./$EXEC
-          tar -czf ./artifacts/$NAME-$ARCH-$TAG.tar.gz $EXEC
+          mv ./$EXEC ./gitignore.in
+          tar -czf ./artifacts/$NAME-$ARCH-$TAG.tar.gz ./gitignore.in
 
       - if: startsWith(github.ref, 'refs/tags/')
         name: Archive artifact
