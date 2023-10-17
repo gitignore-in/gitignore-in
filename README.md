@@ -23,6 +23,8 @@ However, this is a troublesome task that can cause mistakes.
 
 ## Solution
 
+<img width="735" alt="concept" src="https://github.com/gitignore-in/gitignore-in/assets/2596972/68cdeb1e-2b2b-4b01-9c2b-fc4286027e39">
+
 `gitignore.in` is a Command Line Interface (CLI) tool that generates `.gitignore` from a template.
 
 ## License
