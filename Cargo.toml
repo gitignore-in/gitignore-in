@@ -18,7 +18,7 @@ shlex = "1.2.0"
 
 [dependencies.openssl]
 # This is required for reqwest to work standalone
-version = "0.10.57"
+version = "0.10.59"
 features = ["vendored"]
 
 [dev-dependencies]
