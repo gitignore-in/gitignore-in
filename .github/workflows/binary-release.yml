@@ -31,7 +31,8 @@ jobs:
             package: gcc-aarch64-linux-gnu
             gcc: aarch64-linux-gnu-gcc
           - arch: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+            # Use musl 1.1 instead of 1.2
+            os: ubuntu-22.04
             package: gcc-aarch64-linux-gnu musl-tools
             gcc: aarch64-linux-gnu-gcc
             cflags: -U_FORTIFY_SOURCE
@@ -40,7 +41,8 @@ jobs:
             package: gcc-arm-linux-gnueabihf
             gcc: arm-linux-gnueabihf-gcc
           - arch: armv7-unknown-linux-musleabihf
-            os: ubuntu-latest
+            # Use musl 1.1 instead of 1.2
+            os: ubuntu-22.04
             package: gcc-arm-linux-gnueabihf musl-tools
             gcc: arm-linux-gnueabihf-gcc
             cflags: -U_FORTIFY_SOURCE
