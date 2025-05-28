@@ -13,14 +13,11 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
         Err(err) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err)),
     };
     if stderr.contains("boilerplate not found") {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Failed to get {target} from gibo: {stdout}",
-                target = target,
-                stdout = stdout
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "Failed to get {target} from gibo: {stdout}",
+            target = target,
+            stdout = stdout
+        )));
     }
     Ok(stdout)
 }

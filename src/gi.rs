@@ -9,37 +9,28 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
     let response = match client.get(url).send() {
         Ok(r) => r,
         Err(e) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Failed to request to {BASE_URL}{target}: {e}",
-                    target = target
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Failed to request to {BASE_URL}{target}: {e}",
+                target = target
+            )));
         }
     };
     let stdout = match response.text() {
         Ok(s) => s,
         Err(e) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Failed to get {target} from {BASE_URL}{target}: {e}",
-                    target = target,
-                    e = e
-                ),
-            ));
+            return Err(std::io::Error::other(format!(
+                "Failed to get {target} from {BASE_URL}{target}: {e}",
+                target = target,
+                e = e
+            )));
         }
     };
     if stdout.contains("ERROR") && stdout.contains("is undefined") {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!(
-                "Failed to get {target} from {BASE_URL}{target}: {stdout}",
-                target = target,
-                stdout = stdout
-            ),
-        ));
+        return Err(std::io::Error::other(format!(
+            "Failed to get {target} from {BASE_URL}{target}: {stdout}",
+            target = target,
+            stdout = stdout
+        )));
     }
     Ok(stdout)
 }
