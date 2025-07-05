@@ -15,24 +15,24 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
-                result.push_str(&format!("# {}\n", c));
+                result.push_str(&format!("# {c}\n"));
             }
             GitIgnoreStatement::Meaningless(Meaningless::Content(_m)) => {}
             GitIgnoreStatement::Gibo(Gibo::Target(target)) => {
                 let content = gibo_command(&target)?;
                 result.push_str(&separator());
-                result.push_str(&format!("# gibo dump {}\n", target));
+                result.push_str(&format!("# gibo dump {target}\n"));
                 result.push_str(&content);
             }
             GitIgnoreStatement::Gi(Gi::Target(target)) => {
                 let content = gi_command(&target)?;
                 result.push_str(&separator());
-                result.push_str(&format!("# gi {}\n", target));
+                result.push_str(&format!("# gi {target}\n"));
                 result.push_str(&content);
             }
             GitIgnoreStatement::Echo(Echo::Content(echo)) => {
                 result.push_str(&separator());
-                result.push_str(&format!("{}\n", echo));
+                result.push_str(&format!("{echo}\n"));
             }
         }
     }

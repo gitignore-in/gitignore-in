@@ -16,7 +16,7 @@ fn main() -> std::io::Result<()> {
             println!("Try to create .gitignore.in file, but failed.");
         }
         Err(e) => {
-            println!("Error: {}", e);
+            println!("Error: {e}");
             return Err(e);
         }
         _ => {}
