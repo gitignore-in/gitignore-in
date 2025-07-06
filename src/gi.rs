@@ -10,8 +10,7 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         Ok(r) => r,
         Err(e) => {
             return Err(std::io::Error::other(format!(
-                "Failed to request to {BASE_URL}{target}: {e}",
-                target = target
+                "Failed to request to {BASE_URL}{target}: {e}"
             )));
         }
     };
@@ -19,17 +18,13 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         Ok(s) => s,
         Err(e) => {
             return Err(std::io::Error::other(format!(
-                "Failed to get {target} from {BASE_URL}{target}: {e}",
-                target = target,
-                e = e
+                "Failed to get {target} from {BASE_URL}{target}: {e}"
             )));
         }
     };
     if stdout.contains("ERROR") && stdout.contains("is undefined") {
         return Err(std::io::Error::other(format!(
-            "Failed to get {target} from {BASE_URL}{target}: {stdout}",
-            target = target,
-            stdout = stdout
+            "Failed to get {target} from {BASE_URL}{target}: {stdout}"
         )));
     }
     Ok(stdout)

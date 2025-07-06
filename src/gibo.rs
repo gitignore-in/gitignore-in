@@ -14,9 +14,7 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
     };
     if stderr.contains("boilerplate not found") {
         return Err(std::io::Error::other(format!(
-            "Failed to get {target} from gibo: {stdout}",
-            target = target,
-            stdout = stdout
+            "Failed to get {target} from gibo: {stdout}"
         )));
     }
     Ok(stdout)
@@ -32,7 +30,7 @@ mod tests {
         let result = match result {
             Ok(result) => result,
             Err(e) => {
-                println!("{}", e);
+                println!("{e}");
                 unreachable!();
             }
         };
