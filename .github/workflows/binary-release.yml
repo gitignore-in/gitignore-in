@@ -104,7 +104,7 @@ jobs:
 
       - if: startsWith(github.ref, 'refs/tags/')
         name: Archive artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: result
           path: |
@@ -116,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: result
           path: ./artifacts
