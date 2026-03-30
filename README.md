@@ -1,7 +1,5 @@
 # gitignore.in
 
-[![codecov](https://codecov.io/gh/gitignore-in/gitignore-in/graph/badge.svg?token=1XOPN2U21W)](https://codecov.io/gh/gitignore-in/gitignore-in)
-
 Website: https://www.gitignore.in/
 
 ## Motivation
