@@ -30,6 +30,33 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
     Ok(stdout)
 }
 
+pub fn gi_list() -> std::io::Result<Vec<String>> {
+    let url = format!("{BASE_URL}list?format=lines");
+    let client = Client::new();
+    let response = match client.get(url).send() {
+        Ok(r) => r,
+        Err(e) => {
+            return Err(std::io::Error::other(format!(
+                "Failed to request to {BASE_URL}list?format=lines: {e}"
+            )));
+        }
+    };
+    let stdout = match response.text() {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(std::io::Error::other(format!(
+                "Failed to get list from {BASE_URL}list?format=lines: {e}"
+            )));
+        }
+    };
+    Ok(stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

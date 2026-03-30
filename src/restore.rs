@@ -57,6 +57,10 @@ pub(crate) fn restore(text: &str) -> String {
     result.join("\n") + "\n"
 }
 
+pub(crate) fn looks_generated(text: &str) -> bool {
+    HEADER_LINES.iter().all(|line| text.contains(line))
+}
+
 fn skip_generated_section<'a, I>(lines: &mut std::iter::Peekable<I>)
 where
     I: Iterator<Item = &'a str>,

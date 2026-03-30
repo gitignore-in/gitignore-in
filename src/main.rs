@@ -3,6 +3,7 @@ use std::{io::Read, path::Path};
 mod build;
 mod gi;
 mod gibo;
+mod infer;
 mod parser;
 mod restore;
 mod script;
@@ -28,6 +29,18 @@ struct Cli {
 enum Commands {
     /// Restore .gitignore.in from a generated .gitignore
     Restore,
+    /// Infer .gitignore.in from an existing .gitignore
+    Infer {
+        /// Comma-separated gibo targets to consider
+        #[arg(long, value_delimiter = ',')]
+        gibo: Vec<String>,
+        /// Comma-separated gitignore.io targets to consider
+        #[arg(long, value_delimiter = ',')]
+        gi: Vec<String>,
+        /// Minimum number of matching lines required for a template
+        #[arg(long, default_value_t = 2)]
+        min_overlap: usize,
+    },
 }
 
 fn run(cli: Cli) -> std::io::Result<()> {
@@ -35,6 +48,15 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Some(Commands::Restore) => {
             restore_gitignore_in_file()?;
             println!("Restored .gitignore.in");
+            Ok(())
+        }
+        Some(Commands::Infer {
+            gibo,
+            gi,
+            min_overlap,
+        }) => {
+            infer_gitignore_in_file(gibo, gi, min_overlap)?;
+            println!("Inferred .gitignore.in");
             Ok(())
         }
         None => build_gitignore(),
@@ -108,6 +130,28 @@ fn restore_gitignore_in_file() -> std::io::Result<()> {
     Ok(())
 }
 
+fn infer_gitignore_in_file(
+    gibo_targets: Vec<String>,
+    gi_targets: Vec<String>,
+    min_overlap: usize,
+) -> std::io::Result<()> {
+    let path = std::path::Path::new(".gitignore");
+    let mut file = std::fs::File::open(path)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let inferred = infer::infer_with_options(
+        &content,
+        &infer::InferOptions {
+            gibo_targets,
+            gi_targets,
+            min_overlap,
+        },
+    )?;
+    std::fs::write(".gitignore.in", inferred)?;
+    Ok(())
+}
+
 fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
     let path = std::path::Path::new(".gitignore.in");
     parse_path(path)
@@ -146,5 +190,32 @@ mod tests {
     fn test_parse_restore_command() {
         let cli = Cli::parse_from(["gitignore.in", "restore"]);
         assert!(matches!(cli.command, Some(Commands::Restore)));
+    }
+
+    #[test]
+    fn test_parse_infer_command() {
+        let cli = Cli::parse_from([
+            "gitignore.in",
+            "infer",
+            "--gibo",
+            "Rust,macOS",
+            "--gi",
+            "node",
+            "--min-overlap",
+            "3",
+        ]);
+
+        match cli.command {
+            Some(Commands::Infer {
+                gibo,
+                gi,
+                min_overlap,
+            }) => {
+                assert_eq!(gibo, vec!["Rust".to_string(), "macOS".to_string()]);
+                assert_eq!(gi, vec!["node".to_string()]);
+                assert_eq!(min_overlap, 3);
+            }
+            _ => unreachable!(),
+        }
     }
 }
