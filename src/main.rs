@@ -107,9 +107,7 @@ fn bootstrap_gitignore_in_file() -> std::io::Result<BootstrapStatus> {
         return Ok(BootstrapStatus::Inferred);
     }
 
-    if let Err(e) = std::fs::File::create(path) {
-        return Err(e);
-    }
+    std::fs::File::create(path)?;
 
     Ok(BootstrapStatus::Initialized)
 }
