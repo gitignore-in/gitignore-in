@@ -38,6 +38,8 @@ Generate `.gitignore.in` if needed and build `.gitignore`:
 $ gitignore.in
 ```
 
+If `.gitignore.in` does not exist but `.gitignore` already exists, `gitignore.in` first infers a starting `.gitignore.in` and then rebuilds `.gitignore`.
+
 In the `.gitignore.in` file, write the template you want to use like shell script.
 
 ```bash
