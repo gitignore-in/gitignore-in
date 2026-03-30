@@ -1,5 +1,7 @@
 # gitignore.in
 
+![Coverage](https://raw.githubusercontent.com/gitignore-in/octocov-central/main/badges/gitignore-in/gitignore-in/coverage.svg)
+
 Website: https://www.gitignore.in/
 
 ## Motivation
