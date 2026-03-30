@@ -1,11 +1,47 @@
+use clap::{Parser, Subcommand};
 use std::{io::Read, path::Path};
 mod build;
 mod gi;
 mod gibo;
 mod parser;
+mod restore;
 mod script;
 
 fn main() -> std::io::Result<()> {
+    let cli = Cli::parse();
+    run(cli)
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "gitignore.in",
+    version,
+    about = "Manage .gitignore files with .gitignore.in",
+    long_about = None
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Restore .gitignore.in from a generated .gitignore
+    Restore,
+}
+
+fn run(cli: Cli) -> std::io::Result<()> {
+    match cli.command {
+        Some(Commands::Restore) => {
+            restore_gitignore_in_file()?;
+            println!("Restored .gitignore.in");
+            Ok(())
+        }
+        None => build_gitignore(),
+    }
+}
+
+fn build_gitignore() -> std::io::Result<()> {
     // check if the .gitignore.in file is in current directory
     // if not, create it
     match ensure_gitignore_in_file() {
@@ -62,6 +98,16 @@ fn ensure_gitignore_file() -> std::io::Result<()> {
     Ok(())
 }
 
+fn restore_gitignore_in_file() -> std::io::Result<()> {
+    let path = std::path::Path::new(".gitignore");
+    let mut file = std::fs::File::open(path)?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let restored = restore::restore(&content);
+    std::fs::write(".gitignore.in", restored)?;
+    Ok(())
+}
+
 fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
     let path = std::path::Path::new(".gitignore.in");
     parse_path(path)
@@ -84,15 +130,21 @@ mod tests {
     fn test_main() {
         let temp_dir = Temp::new_dir().expect("failed to create temp dir");
         std::env::set_current_dir(temp_dir.as_path()).expect("failed to change current dir");
-        let result = main();
+        let result = run(Cli { command: None });
         assert!(result.is_ok());
         // check if the .gitignore.in file is in current directory
         let path = Path::new(".gitignore.in");
         assert!(path.exists());
 
         // try again
-        let result = main();
+        let result = run(Cli { command: None });
         assert!(result.is_ok());
         assert!(path.exists());
+    }
+
+    #[test]
+    fn test_parse_restore_command() {
+        let cli = Cli::parse_from(["gitignore.in", "restore"]);
+        assert!(matches!(cli.command, Some(Commands::Restore)));
     }
 }
