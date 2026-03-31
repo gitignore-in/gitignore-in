@@ -1,9 +1,9 @@
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitIgnoreIn {
     pub(crate) content: Vec<GitIgnoreStatement>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitIgnoreStatement {
     Comment(Comment),
     Meaningless(Meaningless),
@@ -12,27 +12,27 @@ pub enum GitIgnoreStatement {
     Echo(Echo),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Comment {
     Content(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Meaningless {
     Content(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Gibo {
     Target(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Gi {
     Target(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Echo {
     Content(String),
 }

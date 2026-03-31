@@ -61,6 +61,26 @@ If you already have a `.gitignore`, you can infer a starting `.gitignore.in` fro
 $ gitignore.in infer --gibo Rust,macOS --gi node
 ```
 
+Search available templates before adding them.
+This matches template names case-insensitively by substring:
+
+```bash
+$ gitignore.in search macos rust
+```
+
+Add templates without worrying about `gibo` vs `gi`.
+`gitignore.in` resolves names case-insensitively, prefers the provider already used in `.gitignore.in`, and rebuilds `.gitignore` after the update.
+
+```bash
+$ gitignore.in add rust macos node
+```
+
+Remove templates in the same way:
+
+```bash
+$ gitignore.in remove RUST Node
+```
+
 This infer mode is heuristic.
 It tries to cover the existing `.gitignore` with the specified `gibo dump ...` and `gi ...` candidates, then falls back to `echo '...'` for unmatched lines.
 If you omit both `--gibo` and `--gi`, it checks all available templates from both providers.
