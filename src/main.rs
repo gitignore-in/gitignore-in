@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::{io::Read, path::Path};
 mod build;
+mod edit;
 mod gi;
 mod gibo;
 mod infer;
@@ -27,6 +28,16 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Add templates to .gitignore.in and rebuild .gitignore
+    Add {
+        /// Template names such as Rust, macOS, or node
+        templates: Vec<String>,
+    },
+    /// Remove templates from .gitignore.in and rebuild .gitignore
+    Remove {
+        /// Template names such as Rust, macOS, or node
+        templates: Vec<String>,
+    },
     /// Restore .gitignore.in from a generated .gitignore
     Restore,
     /// Infer .gitignore.in from an existing .gitignore
@@ -45,6 +56,16 @@ enum Commands {
 
 fn run(cli: Cli) -> std::io::Result<()> {
     match cli.command {
+        Some(Commands::Add { templates }) => {
+            update_gitignore_in_file(UpdateMode::Add, templates)?;
+            println!("Updated .gitignore.in");
+            build_gitignore()
+        }
+        Some(Commands::Remove { templates }) => {
+            update_gitignore_in_file(UpdateMode::Remove, templates)?;
+            println!("Updated .gitignore.in");
+            build_gitignore()
+        }
         Some(Commands::Restore) => {
             restore_gitignore_in_file()?;
             println!("Restored .gitignore.in");
@@ -61,6 +82,11 @@ fn run(cli: Cli) -> std::io::Result<()> {
         }
         None => build_gitignore(),
     }
+}
+
+enum UpdateMode {
+    Add,
+    Remove,
 }
 
 fn build_gitignore() -> std::io::Result<()> {
@@ -157,6 +183,39 @@ fn infer_gitignore_in_file(
     Ok(())
 }
 
+fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io::Result<()> {
+    if templates.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "At least one template name is required",
+        ));
+    }
+
+    match bootstrap_gitignore_in_file() {
+        Ok(BootstrapStatus::Initialized) => {
+            println!("Initialized .gitignore.in");
+        }
+        Ok(BootstrapStatus::Inferred) => {
+            println!("Inferred .gitignore.in from .gitignore");
+        }
+        Ok(BootstrapStatus::AlreadyPresent) => {}
+        Err(e) => return Err(e),
+    }
+
+    let mut script = parse_gitignore_in_file()?;
+    match mode {
+        UpdateMode::Add => {
+            let catalog = edit::Catalog::load()?;
+            edit::add_templates(&mut script, &catalog, &templates)?;
+        }
+        UpdateMode::Remove => {
+            edit::remove_templates(&mut script, &templates)?;
+        }
+    }
+    std::fs::write(".gitignore.in", edit::render(&script))?;
+    Ok(())
+}
+
 fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
     let path = std::path::Path::new(".gitignore.in");
     parse_path(path)
@@ -225,6 +284,28 @@ mod tests {
     fn test_parse_restore_command() {
         let cli = Cli::parse_from(["gitignore.in", "restore"]);
         assert!(matches!(cli.command, Some(Commands::Restore)));
+    }
+
+    #[test]
+    fn test_parse_add_command() {
+        let cli = Cli::parse_from(["gitignore.in", "add", "Rust", "node"]);
+        match cli.command {
+            Some(Commands::Add { templates }) => {
+                assert_eq!(templates, vec!["Rust".to_string(), "node".to_string()]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_parse_remove_command() {
+        let cli = Cli::parse_from(["gitignore.in", "remove", "Rust"]);
+        match cli.command {
+            Some(Commands::Remove { templates }) => {
+                assert_eq!(templates, vec!["Rust".to_string()]);
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]
