@@ -28,6 +28,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Search templates available from gibo and gitignore.io
+    Search {
+        /// Search terms matched case-insensitively against template names
+        queries: Vec<String>,
+    },
     /// Add templates to .gitignore.in and rebuild .gitignore
     Add {
         /// Template names such as Rust, macOS, or node
@@ -56,6 +61,7 @@ enum Commands {
 
 fn run(cli: Cli) -> std::io::Result<()> {
     match cli.command {
+        Some(Commands::Search { queries }) => search_templates(queries),
         Some(Commands::Add { templates }) => {
             update_gitignore_in_file(UpdateMode::Add, templates)?;
             println!("Updated .gitignore.in");
@@ -113,6 +119,29 @@ fn build_gitignore() -> std::io::Result<()> {
     let path = Path::new(".gitignore");
     std::fs::write(path, result)?;
     println!("Generated .gitignore");
+    Ok(())
+}
+
+fn search_templates(queries: Vec<String>) -> std::io::Result<()> {
+    let catalog = edit::Catalog::load()?;
+    let results = catalog.search(&queries);
+    if results.is_empty() {
+        let message = if queries.is_empty() {
+            "No templates are available from gibo or gitignore.io".to_string()
+        } else {
+            format!("No templates matched: {}", queries.join(", "))
+        };
+        return Err(std::io::Error::other(message));
+    }
+
+    for template in results {
+        println!(
+            "{}\t{}",
+            edit::provider_label(template.provider),
+            template.target
+        );
+    }
+
     Ok(())
 }
 
@@ -292,6 +321,17 @@ mod tests {
         match cli.command {
             Some(Commands::Add { templates }) => {
                 assert_eq!(templates, vec!["Rust".to_string(), "node".to_string()]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_parse_search_command() {
+        let cli = Cli::parse_from(["gitignore.in", "search", "rust", "node"]);
+        match cli.command {
+            Some(Commands::Search { queries }) => {
+                assert_eq!(queries, vec!["rust".to_string(), "node".to_string()]);
             }
             _ => unreachable!(),
         }

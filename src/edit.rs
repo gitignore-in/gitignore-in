@@ -57,6 +57,43 @@ impl Catalog {
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
+
+    pub(crate) fn search(&self, queries: &[String]) -> Vec<TemplateRef> {
+        let mut results: Vec<TemplateRef> = self
+            .entries
+            .values()
+            .flat_map(|templates| templates.iter().cloned())
+            .collect();
+        results.sort_by(|left, right| {
+            normalize_target_key(&left.target)
+                .cmp(&normalize_target_key(&right.target))
+                .then(provider_label(left.provider).cmp(provider_label(right.provider)))
+                .then(left.target.cmp(&right.target))
+        });
+
+        if queries.is_empty() {
+            return results;
+        }
+
+        let normalized_queries: Vec<String> = queries
+            .iter()
+            .map(|query| normalize_target_key(query))
+            .collect();
+        results
+            .into_iter()
+            .filter(|template| {
+                let key = normalize_target_key(&template.target);
+                normalized_queries.iter().any(|query| key.contains(query))
+            })
+            .collect()
+    }
+}
+
+pub(crate) fn provider_label(provider: Provider) -> &'static str {
+    match provider {
+        Provider::Gibo => "gibo",
+        Provider::Gi => "gi",
+    }
 }
 
 pub(crate) fn add_templates(
@@ -367,5 +404,51 @@ mod tests {
             .expect_err("expected missing template error");
 
         assert!(error.to_string().contains("node"));
+    }
+
+    #[test]
+    fn search_matches_case_insensitive_substrings() {
+        let catalog = catalog(&[
+            (Provider::Gibo, "Rust"),
+            (Provider::Gi, "Node"),
+            (Provider::Gibo, "macOS"),
+        ]);
+
+        let results = catalog.search(&["os".to_string(), "rust".to_string()]);
+
+        assert_eq!(
+            results,
+            vec![
+                TemplateRef {
+                    provider: Provider::Gibo,
+                    target: "macOS".to_string(),
+                },
+                TemplateRef {
+                    provider: Provider::Gibo,
+                    target: "Rust".to_string(),
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn search_without_query_returns_all_templates() {
+        let catalog = catalog(&[(Provider::Gi, "Node"), (Provider::Gibo, "Rust")]);
+
+        let results = catalog.search(&[]);
+
+        assert_eq!(
+            results,
+            vec![
+                TemplateRef {
+                    provider: Provider::Gi,
+                    target: "Node".to_string(),
+                },
+                TemplateRef {
+                    provider: Provider::Gibo,
+                    target: "Rust".to_string(),
+                }
+            ]
+        );
     }
 }
