@@ -16,7 +16,6 @@ permissions:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    if: ${{ secrets.DOWNSTREAM_RELEASE_PAT != '' }}
     strategy:
       fail-fast: false
       matrix:
