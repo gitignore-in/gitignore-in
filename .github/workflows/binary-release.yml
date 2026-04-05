@@ -61,10 +61,20 @@ jobs:
           # - arch: x86_64-pc-windows-gnu
           #   os: ubuntu-latest
           #   package: gcc-mingw-w64-x86-64
+          # Apple currently ships security updates for macOS Sonoma 14, Sequoia 15,
+          # and Tahoe 26, so keep the next Homebrew-distributed binaries compatible
+          # with the oldest still-supported major release:
+          # https://support.apple.com/en-us/100100
+          #
+          # The GitHub-hosted runner labels below are stable and explicit; avoid
+          # macos-latest for release builds:
+          # https://docs.github.com/en/actions/reference/runners/github-hosted-runners
           - arch: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-15-intel
+            deployment_target: "14.0"
           - arch: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-15
+            deployment_target: "14.0"
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -82,7 +92,7 @@ jobs:
             sudo apt-get update && sudo apt-get install -y $PACKAGE
             TARGET="$ARCH" CFLAGS="$CFLAGS" CC=$GCC cargo build --release --verbose --target $ARCH
           elif [[ $OS =~ ^.*macos.*$ ]]; then
-            cargo build --release --verbose --target $ARCH
+            MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" cargo build --release --verbose --target $ARCH
           fi
 
       - name: Compress
