@@ -1,0 +1,56 @@
+name: rehearse downstream release preparation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      released_version:
+        description: Published gitignore.in version to rehearse with (defaults to latest release tag)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      released_version: ${{ steps.resolve.outputs.released_version }}
+      candidate_version: ${{ steps.resolve.outputs.candidate_version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve rehearsal versions
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASED_VERSION: ${{ inputs.released_version }}
+        run: |
+          released_version="${INPUT_RELEASED_VERSION}"
+          if [ -z "${released_version}" ]; then
+            released_version="$(gh release view --json tagName --jq .tagName)"
+          fi
+          candidate_version="$(perl -ne 'print "$1\n" if /^version = "(.*)"$/' Cargo.toml | head -n1)"
+          echo "released_version=${released_version}" >> "${GITHUB_OUTPUT}"
+          echo "candidate_version=${candidate_version}" >> "${GITHUB_OUTPUT}"
+
+  dispatch:
+    runs-on: ubuntu-latest
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        repository:
+          - gitignore-in/homebrew-gitignore-in
+          - gitignore-in/gh-action
+    steps:
+      - name: Dispatch downstream rehearsal
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.DOWNSTREAM_RELEASE_PAT }}
+          repository: ${{ matrix.repository }}
+          event-type: gitignore-in-release-published
+          client-payload: >-
+            {"version":"${{ needs.resolve.outputs.released_version }}","mode":"dry-run","candidate_version":"${{ needs.resolve.outputs.candidate_version }}","source_sha":"${{ github.sha }}","source_repository":"${{ github.repository }}"}

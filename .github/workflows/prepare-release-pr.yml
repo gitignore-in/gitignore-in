@@ -1,0 +1,35 @@
+name: prepare release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to write into Cargo.toml (for example, 0.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set release version
+        run: ./scripts/set-version.sh "${{ inputs.version }}"
+
+      - name: Create release pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: release/v${{ inputs.version }}
+          delete-branch: true
+          commit-message: Release v${{ inputs.version }}
+          title: Release v${{ inputs.version }}
+          body: |
+            Prepare the source tree for release `${{ inputs.version }}`.
+
+            - update `Cargo.toml` to the target release version
+            - let release-specific PR checks validate the release candidate
