@@ -1,0 +1,56 @@
+name: prepare next development PR
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      next_version:
+        description: Next development version (defaults to next patch with -dev)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve next development version
+        id: version
+        env:
+          INPUT_NEXT_VERSION: ${{ inputs.next_version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          next_version="${INPUT_NEXT_VERSION}"
+          if [ -z "${next_version}" ]; then
+            if [ -z "${RELEASE_TAG}" ]; then
+              echo "next_version input is required when there is no release event" >&2
+              exit 1
+            fi
+            release_tag="${RELEASE_TAG#v}"
+            IFS='.' read -r major minor patch <<< "${release_tag}"
+            next_patch=$((patch + 1))
+            next_version="${major}.${minor}.${next_patch}-dev"
+          fi
+          echo "next_version=${next_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set next development version
+        run: |
+          perl -0pi -e 's/^version = ".*"$/version = "'"${{ steps.version.outputs.next_version }}"'"/m' Cargo.toml
+
+      - name: Create next development pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: chore/next-development-version
+          delete-branch: true
+          commit-message: Bump to ${{ steps.version.outputs.next_version }}
+          title: Bump to ${{ steps.version.outputs.next_version }}
+          body: |
+            Move `main` forward after the latest published release.
+
+            - update `Cargo.toml` to `${{ steps.version.outputs.next_version }}`
