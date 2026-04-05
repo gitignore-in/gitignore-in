@@ -2,7 +2,7 @@
 
 ![Coverage](https://raw.githubusercontent.com/gitignore-in/octocov-central/main/badges/gitignore-in/gitignore-in/coverage.svg)
 
-Website: https://www.gitignore.in/
+Website: https://gitignore.in/
 
 ## Motivation
 
@@ -44,6 +44,9 @@ In the `.gitignore.in` file, write the template you want to use like shell scrip
 
 ```bash
 $ cat .gitignore.in
+# See https://gitignore.in/
+# Edit this file and run `gitignore.in` to rebuild .gitignore
+
 # This is a comment
 gibo dump Linux
 gibo dump macOS
