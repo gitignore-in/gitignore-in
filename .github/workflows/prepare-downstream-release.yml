@@ -1,0 +1,47 @@
+name: prepare downstream release updates
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released gitignore.in version tag (for example, v0.2.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.DOWNSTREAM_RELEASE_PAT != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        repository:
+          - gitignore-in/homebrew-gitignore-in
+          - gitignore-in/gh-action
+    steps:
+      - name: Resolve released version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          version="${INPUT_VERSION:-$RELEASE_VERSION}"
+          if [ -z "${version}" ]; then
+            echo "version input is required" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Dispatch downstream preparation
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.DOWNSTREAM_RELEASE_PAT }}
+          repository: ${{ matrix.repository }}
+          event-type: gitignore-in-release-published
+          client-payload: >-
+            {"version":"${{ steps.version.outputs.version }}","source_repository":"${{ github.repository }}"}
