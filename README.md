@@ -40,7 +40,9 @@ $ gitignore.in
 
 If `.gitignore.in` does not exist but `.gitignore` already exists, `gitignore.in` first infers a starting `.gitignore.in` and then rebuilds `.gitignore`.
 
-In the `.gitignore.in` file, write the template you want to use like shell script.
+In the `.gitignore.in` file, write one supported template command per line.
+`gitignore.in` intentionally parses a small template language instead of executing
+the file as a shell script.
 
 ```bash
 $ cat .gitignore.in
@@ -55,6 +57,13 @@ gibo dump Python
 echo '.coverage'
 echo '.env'
 ```
+
+Supported lines are:
+
+- `gibo dump <template>`: append a template from gibo
+- `gi <template>`: append a template from gitignore.io
+- `echo <line>`: append a literal line
+- `# ...`: keep a comment in the generated output
 
 When you run `gitignore.in` again, `.gitignore` will be updated.
 
