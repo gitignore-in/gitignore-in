@@ -1,5 +1,8 @@
 name: publish crates
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -9,6 +12,8 @@ on:
 
 jobs:
   publish:
+    permissions:
+      contents: read
     if: ${{ github.event_name == 'release' || startsWith(github.head_ref, 'release/') }}
     runs-on: ubuntu-latest
     steps:
@@ -18,7 +23,7 @@ jobs:
       - run: cargo build --release --all-features
 
       - name: publish (release PR dry-run)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: cargo publish --dry-run --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
