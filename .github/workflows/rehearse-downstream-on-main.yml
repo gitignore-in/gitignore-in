@@ -20,7 +20,7 @@ jobs:
       released_version: ${{ steps.resolve.outputs.released_version }}
       candidate_version: ${{ steps.resolve.outputs.candidate_version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Resolve rehearsal versions
         id: resolve
@@ -47,7 +47,7 @@ jobs:
           - gitignore-in/gh-action
     steps:
       - name: Dispatch downstream rehearsal
-        uses: peter-evans/repository-dispatch@v4
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
         with:
           token: ${{ secrets.DOWNSTREAM_RELEASE_PAT }}
           repository: ${{ matrix.repository }}
