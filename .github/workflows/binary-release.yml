@@ -7,6 +7,9 @@ on:
     # "released" events are emitted either when directly be released or be edited from pre-released.
     types: [prereleased, released]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: build ${{ matrix.arch }} on ${{ matrix.os }} with ${{ matrix.gcc }}
@@ -124,6 +127,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
