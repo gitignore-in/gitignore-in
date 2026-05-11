@@ -1,4 +1,5 @@
 use reqwest::blocking::Client;
+use reqwest::StatusCode;
 use url::Url;
 
 const BASE_URL: &str = "https://www.toptal.com/developers/gitignore/api/";
@@ -13,6 +14,57 @@ fn target_url(target: &str) -> std::io::Result<Url> {
     Ok(url)
 }
 
+fn validate_gi_response(
+    status: StatusCode,
+    body: String,
+    target: &str,
+    url: &Url,
+) -> std::io::Result<String> {
+    if !status.is_success() {
+        return Err(std::io::Error::other(format!(
+            "Failed to get {target} from {url}: HTTP {} (body bytes={})",
+            status.as_u16(),
+            body.len()
+        )));
+    }
+    if body.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "Failed to get {target} from {url}: empty response body"
+        )));
+    }
+    if body.contains("ERROR") && body.contains("is undefined") {
+        return Err(std::io::Error::other(format!(
+            "Failed to get {target} from {url}: {body}"
+        )));
+    }
+    Ok(body)
+}
+
+fn validate_gi_list_response(
+    status: StatusCode,
+    body: String,
+    url: &str,
+) -> std::io::Result<Vec<String>> {
+    if !status.is_success() {
+        return Err(std::io::Error::other(format!(
+            "Failed to get list from {url}: HTTP {} (body bytes={})",
+            status.as_u16(),
+            body.len()
+        )));
+    }
+    if body.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "Failed to get list from {url}: empty response body"
+        )));
+    }
+    Ok(body
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
 pub fn gi_command(target: &str) -> std::io::Result<String> {
     let url = target_url(target)?;
     let client = Client::new();
@@ -24,7 +76,8 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
             )));
         }
     };
-    let stdout = match response.text() {
+    let status = response.status();
+    let body = match response.text() {
         Ok(s) => s,
         Err(e) => {
             return Err(std::io::Error::other(format!(
@@ -32,39 +85,30 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
             )));
         }
     };
-    if stdout.contains("ERROR") && stdout.contains("is undefined") {
-        return Err(std::io::Error::other(format!(
-            "Failed to get {target} from {url}: {stdout}"
-        )));
-    }
-    Ok(stdout)
+    validate_gi_response(status, body, target, &url)
 }
 
 pub fn gi_list() -> std::io::Result<Vec<String>> {
     let url = format!("{BASE_URL}list?format=lines");
     let client = Client::new();
-    let response = match client.get(url).send() {
+    let response = match client.get(&url).send() {
         Ok(r) => r,
         Err(e) => {
             return Err(std::io::Error::other(format!(
-                "Failed to request to {BASE_URL}list?format=lines: {e}"
+                "Failed to request to {url}: {e}"
             )));
         }
     };
-    let stdout = match response.text() {
+    let status = response.status();
+    let body = match response.text() {
         Ok(s) => s,
         Err(e) => {
             return Err(std::io::Error::other(format!(
-                "Failed to get list from {BASE_URL}list?format=lines: {e}"
+                "Failed to get list from {url}: {e}"
             )));
         }
     };
-    Ok(stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToString::to_string)
-        .collect())
+    validate_gi_list_response(status, body, &url)
 }
 
 #[cfg(test)]
@@ -122,6 +166,83 @@ mod tests {
             target_url("C++").unwrap().as_str(),
             "https://www.toptal.com/developers/gitignore/api/C++"
         );
+    }
+
+    fn dummy_url() -> Url {
+        Url::parse("https://example.test/api/X").unwrap()
+    }
+
+    #[test]
+    fn test_validate_gi_response_ok() {
+        let body = "### X ###\nfoo\n".to_string();
+        let result = validate_gi_response(StatusCode::OK, body.clone(), "X", &dummy_url()).unwrap();
+        assert_eq!(result, body);
+    }
+
+    #[test]
+    fn test_validate_gi_response_rejects_5xx_with_empty_body() {
+        let err = validate_gi_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::new(),
+            "X",
+            &dummy_url(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("HTTP 500"));
+    }
+
+    #[test]
+    fn test_validate_gi_response_rejects_5xx_with_html_body() {
+        let html = "<html><body>503 Service Unavailable</body></html>".to_string();
+        let err = validate_gi_response(StatusCode::SERVICE_UNAVAILABLE, html, "X", &dummy_url())
+            .unwrap_err();
+        assert!(err.to_string().contains("HTTP 503"));
+    }
+
+    #[test]
+    fn test_validate_gi_response_rejects_2xx_with_empty_body() {
+        // upstream が 200 を返したのに body が空なら、`.gitignore` に空文字を
+        // 書き込まないように reject する。
+        let err =
+            validate_gi_response(StatusCode::OK, String::new(), "X", &dummy_url()).unwrap_err();
+        assert!(err.to_string().contains("empty response body"));
+    }
+
+    #[test]
+    fn test_validate_gi_response_rejects_legacy_error_marker() {
+        // gitignore.io 既存のエラー文面 "#!! ERROR: <target> is undefined." を
+        // 200 で返してくる経路の互換性も維持する。
+        let body = "#!! ERROR: foo is undefined. #!!".to_string();
+        let err = validate_gi_response(StatusCode::OK, body, "foo", &dummy_url()).unwrap_err();
+        assert!(err.to_string().contains("ERROR"));
+        assert!(err.to_string().contains("is undefined"));
+    }
+
+    #[test]
+    fn test_validate_gi_list_response_ok() {
+        let body = "Rust\nGo\nPython\n".to_string();
+        let result =
+            validate_gi_list_response(StatusCode::OK, body, "https://example.test/list").unwrap();
+        assert_eq!(result, vec!["Rust", "Go", "Python"]);
+    }
+
+    #[test]
+    fn test_validate_gi_list_response_rejects_non_2xx() {
+        let err = validate_gi_list_response(
+            StatusCode::BAD_GATEWAY,
+            "<html>502</html>".to_string(),
+            "https://example.test/list",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("HTTP 502"));
+    }
+
+    #[test]
+    fn test_validate_gi_list_response_rejects_2xx_empty_body() {
+        let err =
+            validate_gi_list_response(StatusCode::OK, String::new(), "https://example.test/list")
+                .unwrap_err();
+        assert!(err.to_string().contains("empty response body"));
     }
 
     #[test]
