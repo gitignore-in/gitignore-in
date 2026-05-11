@@ -378,6 +378,7 @@ dependencies = [
  "openssl",
  "reqwest",
  "shlex",
+ "url",
 ]
 
 [[package]]
