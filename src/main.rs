@@ -81,6 +81,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
             build_gitignore()
         }
         Some(Commands::Restore) => {
+            refuse_if_gitignore_in_exists("restore")?;
             restore_gitignore_in_file()?;
             println!("Restored .gitignore.in");
             Ok(())
@@ -90,6 +91,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
             gi,
             min_overlap,
         }) => {
+            refuse_if_gitignore_in_exists("infer")?;
             infer_gitignore_in_file(gibo, gi, min_overlap)?;
             println!("Inferred .gitignore.in");
             Ok(())
@@ -105,20 +107,17 @@ enum UpdateMode {
 
 fn build_gitignore() -> std::io::Result<()> {
     match bootstrap_gitignore_in_file() {
+        Ok(BootstrapStatus::AlreadyPresent) => {}
         Ok(BootstrapStatus::Initialized) => {
             println!("Initialized .gitignore.in");
         }
         Ok(BootstrapStatus::Inferred) => {
             println!("Inferred .gitignore.in from .gitignore");
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            println!("Tried to create .gitignore.in, but failed.");
-        }
         Err(e) => {
-            println!("Error: {e}");
+            println!("Failed to set up .gitignore.in: {e}");
             return Err(e);
         }
-        _ => {}
     }
     let statements = parse_gitignore_in_file()?;
     let result = build::build(statements)?;
@@ -185,6 +184,19 @@ fn ensure_gitignore_file() -> std::io::Result<()> {
                 Err(_) => return Err(e),
             }
         }
+    }
+    Ok(())
+}
+
+fn refuse_if_gitignore_in_exists(command: &str) -> std::io::Result<()> {
+    let path = Path::new(".gitignore.in");
+    if path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!(
+                ".gitignore.in already exists; remove it before running `gitignore.in {command}`"
+            ),
+        ));
     }
     Ok(())
 }
@@ -412,5 +424,55 @@ mod tests {
     fn add_gitignore_in_header_keeps_existing_header() {
         let content = "# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n";
         assert_eq!(add_gitignore_in_header(content), content);
+    }
+
+    #[test]
+    fn restore_refuses_to_overwrite_existing_gitignore_in() {
+        let _guard = cwd_lock().lock().expect("failed to lock cwd");
+        let current_dir = std::env::current_dir().expect("failed to get current dir");
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        std::env::set_current_dir(temp_dir.as_path()).expect("failed to change current dir");
+        std::fs::write(".gitignore", "node_modules\n").expect("failed to write .gitignore");
+        let original = "# hand-written\necho 'keep-me'\n";
+        std::fs::write(".gitignore.in", original).expect("failed to write .gitignore.in");
+
+        let result = run(Cli {
+            command: Some(Commands::Restore),
+        });
+
+        assert!(result.is_err(), "restore should refuse to overwrite");
+        let err = result.expect_err("restore should error");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        let preserved =
+            std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
+        assert_eq!(preserved, original);
+        std::env::set_current_dir(current_dir).expect("failed to restore current dir");
+    }
+
+    #[test]
+    fn infer_refuses_to_overwrite_existing_gitignore_in() {
+        let _guard = cwd_lock().lock().expect("failed to lock cwd");
+        let current_dir = std::env::current_dir().expect("failed to get current dir");
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        std::env::set_current_dir(temp_dir.as_path()).expect("failed to change current dir");
+        std::fs::write(".gitignore", "node_modules\n").expect("failed to write .gitignore");
+        let original = "# hand-written\necho 'keep-me'\n";
+        std::fs::write(".gitignore.in", original).expect("failed to write .gitignore.in");
+
+        let result = run(Cli {
+            command: Some(Commands::Infer {
+                gibo: Vec::new(),
+                gi: Vec::new(),
+                min_overlap: 2,
+            }),
+        });
+
+        assert!(result.is_err(), "infer should refuse to overwrite");
+        let err = result.expect_err("infer should error");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        let preserved =
+            std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
+        assert_eq!(preserved, original);
+        std::env::set_current_dir(current_dir).expect("failed to restore current dir");
     }
 }
