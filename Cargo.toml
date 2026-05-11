@@ -7,7 +7,6 @@ description = "A command line tool for managing .gitignore files with gitignore.
 license = "BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/gitignore-in/gitignore-in"
-documentation = "https://docs.rs/gitignore-in"
 categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
