@@ -54,6 +54,12 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 result.push_str(&content);
             }
             GitIgnoreStatement::Echo(Echo::Content(echo)) => {
+                if echo.starts_with("# gibo dump ") || echo.starts_with("# gi ") {
+                    return Err(std::io::Error::other(format!(
+                        "echo content {echo:?} starts with a reserved section header prefix; \
+                         use a different prefix to avoid ambiguity during restore"
+                    )));
+                }
                 result.push_str(&separator());
                 result.push_str(&format!("{echo}\n"));
             }
@@ -117,5 +123,21 @@ echo hello
         let script = parse_text(text);
         let result = build(script).unwrap();
         assert_eq!(result.matches("# gibo dump C++").count(), 2);
+    }
+
+    #[test]
+    fn test_echo_with_gibo_prefix_is_rejected() {
+        let text = "echo '# gibo dump Rust'\n";
+        let script = parse_text(text);
+        let err = build(script).unwrap_err();
+        assert!(err.to_string().contains("reserved section header prefix"));
+    }
+
+    #[test]
+    fn test_echo_with_gi_prefix_is_rejected() {
+        let text = "echo '# gi Rust'\n";
+        let script = parse_text(text);
+        let err = build(script).unwrap_err();
+        assert!(err.to_string().contains("reserved section header prefix"));
     }
 }
