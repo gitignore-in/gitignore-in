@@ -71,6 +71,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
         });
     }
 
+    candidates.sort_by(|a, b| a.command.cmp(&b.command));
     Ok(candidates)
 }
 
