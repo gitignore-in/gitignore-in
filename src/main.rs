@@ -1,5 +1,9 @@
 use clap::{Parser, Subcommand};
-use std::{io::Read, io::Write, path::Path};
+use std::{
+    io::{ErrorKind, Read, Write},
+    path::Path,
+    process::ExitCode,
+};
 mod build;
 mod edit;
 mod gi;
@@ -15,6 +19,10 @@ const GITIGNORE_IN_HEADER_LINES: [&str; 2] = [
     "# See https://gitignore.in/",
     "# Edit this file and run `gitignore.in` to rebuild .gitignore",
 ];
+const EXIT_GENERAL_ERROR: u8 = 1;
+const EXIT_USAGE_ERROR: u8 = 2;
+const EXIT_PERMISSION_DENIED: u8 = 13;
+const EXIT_TEMPORARY_FAILURE: u8 = 75;
 
 fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
@@ -24,9 +32,37 @@ fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
     Ok(())
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
-    run(cli)
+    run_cli(cli)
+}
+
+fn run_cli(cli: Cli) -> ExitCode {
+    match run(cli) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            ExitCode::from(exit_code_for_error(&e))
+        }
+    }
+}
+
+fn exit_code_for_error(e: &std::io::Error) -> u8 {
+    match e.kind() {
+        ErrorKind::InvalidInput | ErrorKind::AlreadyExists | ErrorKind::NotFound => {
+            EXIT_USAGE_ERROR
+        }
+        ErrorKind::PermissionDenied => EXIT_PERMISSION_DENIED,
+        ErrorKind::BrokenPipe
+        | ErrorKind::ConnectionAborted
+        | ErrorKind::ConnectionRefused
+        | ErrorKind::ConnectionReset
+        | ErrorKind::Interrupted
+        | ErrorKind::NotConnected
+        | ErrorKind::TimedOut
+        | ErrorKind::UnexpectedEof => EXIT_TEMPORARY_FAILURE,
+        _ => EXIT_GENERAL_ERROR,
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -80,18 +116,18 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Some(Commands::Search { queries }) => search_templates(queries),
         Some(Commands::Add { templates }) => {
             update_gitignore_in_file(UpdateMode::Add, templates)?;
-            println!("Updated .gitignore.in");
+            eprintln!("Updated .gitignore.in");
             build_gitignore()
         }
         Some(Commands::Remove { templates }) => {
             update_gitignore_in_file(UpdateMode::Remove, templates)?;
-            println!("Updated .gitignore.in");
+            eprintln!("Updated .gitignore.in");
             build_gitignore()
         }
         Some(Commands::Restore) => {
             refuse_if_gitignore_in_exists("restore")?;
             restore_gitignore_in_file()?;
-            println!("Restored .gitignore.in");
+            eprintln!("Restored .gitignore.in");
             build_gitignore()
         }
         Some(Commands::Infer {
@@ -101,7 +137,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
         }) => {
             refuse_if_gitignore_in_exists("infer")?;
             infer_gitignore_in_file(gibo, gi, min_overlap)?;
-            println!("Inferred .gitignore.in");
+            eprintln!("Inferred .gitignore.in");
             build_gitignore()
         }
         None => build_gitignore(),
@@ -117,21 +153,23 @@ fn build_gitignore() -> std::io::Result<()> {
     match bootstrap_gitignore_in_file() {
         Ok(BootstrapStatus::AlreadyPresent) => {}
         Ok(BootstrapStatus::Initialized) => {
-            println!("Initialized .gitignore.in");
+            eprintln!("Initialized .gitignore.in");
         }
         Ok(BootstrapStatus::Inferred) => {
-            println!("Inferred .gitignore.in from .gitignore");
+            eprintln!("Inferred .gitignore.in from .gitignore");
         }
         Err(e) => {
-            println!("Failed to set up .gitignore.in: {e}");
-            return Err(e);
+            return Err(std::io::Error::new(
+                e.kind(),
+                format!("Failed to set up .gitignore.in: {e}"),
+            ));
         }
     }
     let statements = parse_gitignore_in_file()?;
     let result = build::build(statements)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
-    println!("Generated .gitignore");
+    eprintln!("Generated .gitignore");
     Ok(())
 }
 
@@ -144,7 +182,7 @@ fn search_templates(queries: Vec<String>) -> std::io::Result<()> {
         } else {
             format!("No templates matched: {}", queries.join(", "))
         };
-        return Err(std::io::Error::other(message));
+        return Err(std::io::Error::new(ErrorKind::InvalidInput, message));
     }
 
     for template in results {
@@ -238,10 +276,10 @@ fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io
 
     match bootstrap_gitignore_in_file() {
         Ok(BootstrapStatus::Initialized) => {
-            println!("Initialized .gitignore.in");
+            eprintln!("Initialized .gitignore.in");
         }
         Ok(BootstrapStatus::Inferred) => {
-            println!("Inferred .gitignore.in from .gitignore");
+            eprintln!("Inferred .gitignore.in from .gitignore");
         }
         Ok(BootstrapStatus::AlreadyPresent) => {}
         Err(e) => return Err(e),
@@ -413,6 +451,40 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn run_cli_maps_invalid_input_to_usage_exit_code() {
+        let exit_code = run_cli(Cli {
+            command: Some(Commands::Add {
+                templates: Vec::new(),
+            }),
+        });
+
+        assert_eq!(exit_code, ExitCode::from(EXIT_USAGE_ERROR));
+    }
+
+    #[test]
+    fn exit_code_for_error_classifies_common_error_kinds() {
+        assert_eq!(
+            exit_code_for_error(&std::io::Error::new(ErrorKind::InvalidInput, "bad input")),
+            EXIT_USAGE_ERROR
+        );
+        assert_eq!(
+            exit_code_for_error(&std::io::Error::new(
+                ErrorKind::PermissionDenied,
+                "permission denied"
+            )),
+            EXIT_PERMISSION_DENIED
+        );
+        assert_eq!(
+            exit_code_for_error(&std::io::Error::new(ErrorKind::TimedOut, "timeout")),
+            EXIT_TEMPORARY_FAILURE
+        );
+        assert_eq!(
+            exit_code_for_error(&std::io::Error::other("unexpected")),
+            EXIT_GENERAL_ERROR
+        );
     }
 
     #[test]
