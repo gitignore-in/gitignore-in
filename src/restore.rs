@@ -35,9 +35,7 @@ pub(crate) fn restore(text: &str) -> String {
                 continue;
             }
 
-            if !section_head.is_empty() {
-                result.push(format!("echo {}", shell_quote(section_head)));
-            }
+            result.push(format!("echo {}", shell_quote(section_head)));
 
             continue;
         }
@@ -141,5 +139,26 @@ plain-entry
     fn round_trips_generated_comment_shape() {
         let restored = restore("# # original comment\n");
         assert_eq!(restored, "# original comment\n");
+    }
+
+    #[test]
+    fn restores_empty_echo() {
+        // separator + empty line comes from `echo ''` in .gitignore.in
+        let text =
+            "# -----------------------------------------------------------------------------\n\n";
+        assert_eq!(restore(text), "echo ''\n");
+    }
+
+    #[test]
+    fn round_trips_empty_echo_via_build() {
+        // build("echo ''\n") produces separator + empty line;
+        // restore should recover "echo ''\n" from that output.
+        use crate::build::build;
+        use crate::parser::parse_text;
+        let input = "echo ''\n";
+        let script = parse_text(input);
+        let built = build(script).unwrap();
+        let restored = restore(&built);
+        assert_eq!(restored, input);
     }
 }
