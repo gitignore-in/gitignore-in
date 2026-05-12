@@ -70,7 +70,11 @@ const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 pub fn gi_command(target: &str) -> std::io::Result<String> {
     let url = target_url(target)?;
     let client = Client::new();
-    let response = match client.get(url.clone()).header("User-Agent", USER_AGENT).send() {
+    let response = match client
+        .get(url.clone())
+        .header("User-Agent", USER_AGENT)
+        .send()
+    {
         Ok(r) => r,
         Err(e) => {
             return Err(std::io::Error::other(format!(
