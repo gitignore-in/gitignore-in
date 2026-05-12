@@ -221,7 +221,10 @@ fn infer_gitignore_in_file(
             min_overlap,
         },
     )?;
-    atomic_write(Path::new(".gitignore.in"), add_gitignore_in_header(&inferred))?;
+    atomic_write(
+        Path::new(".gitignore.in"),
+        add_gitignore_in_header(&inferred),
+    )?;
     Ok(())
 }
 
