@@ -71,9 +71,17 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
     let response = match client.get(url.clone()).send() {
         Ok(r) => r,
         Err(e) => {
-            return Err(std::io::Error::other(format!(
-                "Failed to request to {url}: {e}"
-            )));
+            let kind = if e.is_timeout() {
+                std::io::ErrorKind::TimedOut
+            } else if e.is_connect() {
+                std::io::ErrorKind::NotConnected
+            } else {
+                std::io::ErrorKind::Other
+            };
+            return Err(std::io::Error::new(
+                kind,
+                format!("Failed to request to {url}: {e}"),
+            ));
         }
     };
     let status = response.status();
@@ -94,9 +102,17 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
     let response = match client.get(&url).send() {
         Ok(r) => r,
         Err(e) => {
-            return Err(std::io::Error::other(format!(
-                "Failed to request to {url}: {e}"
-            )));
+            let kind = if e.is_timeout() {
+                std::io::ErrorKind::TimedOut
+            } else if e.is_connect() {
+                std::io::ErrorKind::NotConnected
+            } else {
+                std::io::ErrorKind::Other
+            };
+            return Err(std::io::Error::new(
+                kind,
+                format!("Failed to request to {url}: {e}"),
+            ));
         }
     };
     let status = response.status();

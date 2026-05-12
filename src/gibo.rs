@@ -149,7 +149,7 @@ mod tests {
         let result = match result {
             Ok(result) => result,
             Err(e) => {
-                println!("{e}");
+                eprintln!("{e}");
                 unreachable!();
             }
         };
