@@ -20,6 +20,9 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
         result.push_str(line);
         result.push('\n');
     }
+    let mut gibo_cache: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut gi_cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
@@ -27,13 +30,25 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
             }
             GitIgnoreStatement::Meaningless(Meaningless::Content(_m)) => {}
             GitIgnoreStatement::Gibo(Gibo::Target(target)) => {
-                let content = gibo_command(&target)?;
+                let content = if let Some(cached) = gibo_cache.get(&target) {
+                    cached.clone()
+                } else {
+                    let fetched = gibo_command(&target)?;
+                    gibo_cache.insert(target.clone(), fetched.clone());
+                    fetched
+                };
                 result.push_str(&separator());
                 result.push_str(&format!("# gibo dump {target}\n"));
                 result.push_str(&content);
             }
             GitIgnoreStatement::Gi(Gi::Target(target)) => {
-                let content = gi_command(&target)?;
+                let content = if let Some(cached) = gi_cache.get(&target) {
+                    cached.clone()
+                } else {
+                    let fetched = gi_command(&target)?;
+                    gi_cache.insert(target.clone(), fetched.clone());
+                    fetched
+                };
                 result.push_str(&separator());
                 result.push_str(&format!("# gi {target}\n"));
                 result.push_str(&content);
@@ -84,5 +99,23 @@ echo hello
         })
         .unwrap();
         assert!(result.contains("# See https://gitignore.in/"));
+    }
+
+    #[test]
+    fn test_repeated_gi_target_dedup() {
+        // Same target listed twice: build must succeed and emit both header lines,
+        // producing identical content for each occurrence (cache hit on second call).
+        let text = "gi C++\ngi C++\n";
+        let script = parse_text(text);
+        let result = build(script).unwrap();
+        assert_eq!(result.matches("# gi C++").count(), 2);
+    }
+
+    #[test]
+    fn test_repeated_gibo_target_dedup() {
+        let text = "gibo dump C++\ngibo dump C++\n";
+        let script = parse_text(text);
+        let result = build(script).unwrap();
+        assert_eq!(result.matches("# gibo dump C++").count(), 2);
     }
 }
