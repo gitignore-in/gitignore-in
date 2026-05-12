@@ -6,6 +6,7 @@ use std::{
 };
 mod build;
 mod edit;
+mod format;
 mod gi;
 mod gibo;
 mod infer;
