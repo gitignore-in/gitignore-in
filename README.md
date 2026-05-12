@@ -65,6 +65,16 @@ Supported lines are:
 - `echo <line>`: append a literal line
 - `# ...`: keep a comment in the generated output
 
+The `.gitignore.in` file is not evaluated as a shell script. Command prefixes
+are case-sensitive and match the single-space forms above (`gibo dump `,
+`gi `, and `echo `). Leading indentation, tabs between command words, or
+unknown commands are preserved when `.gitignore.in` is rewritten, but they do
+not produce generated `.gitignore` entries.
+
+`echo` lines are parsed with shell-like quoting and then normalized as command
+arguments. For example, `echo '!.gitignore'` emits `!.gitignore`, and repeated
+argument whitespace is collapsed.
+
 When you run `gitignore.in` again, `.gitignore` will be updated.
 
 If you already have a `.gitignore`, you can infer a starting `.gitignore.in` from it.
@@ -82,7 +92,7 @@ $ gitignore.in search macos rust
 ```
 
 Add templates without worrying about `gibo` vs `gi`.
-`gitignore.in` resolves names case-insensitively, prefers the provider already used in `.gitignore.in`, and rebuilds `.gitignore` after the update.
+`gitignore.in` resolves names case-insensitively, prefers the provider already used in `.gitignore.in`, falls back to `gibo` when no provider is preferred, and rebuilds `.gitignore` after the update.
 
 ```bash
 $ gitignore.in add rust macos node

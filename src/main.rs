@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::{
-    io::{ErrorKind, Read},
+    io::{ErrorKind, Read, Write},
     path::Path,
     process::ExitCode,
 };
@@ -23,6 +23,14 @@ const EXIT_GENERAL_ERROR: u8 = 1;
 const EXIT_USAGE_ERROR: u8 = 2;
 const EXIT_PERMISSION_DENIED: u8 = 13;
 const EXIT_TEMPORARY_FAILURE: u8 = 75;
+
+fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+    tmp.write_all(content.as_ref())?;
+    tmp.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -159,10 +167,8 @@ fn build_gitignore() -> std::io::Result<()> {
     }
     let statements = parse_gitignore_in_file()?;
     let result = build::build(statements)?;
-    // write to .gitignore
-    ensure_gitignore_file()?;
     let path = Path::new(".gitignore");
-    std::fs::write(path, result)?;
+    atomic_write(path, result)?;
     eprintln!("Generated .gitignore");
     Ok(())
 }
@@ -207,23 +213,9 @@ fn bootstrap_gitignore_in_file() -> std::io::Result<BootstrapStatus> {
         return Ok(BootstrapStatus::Inferred);
     }
 
-    std::fs::File::create(path)?;
-    std::fs::write(path, gitignore_in_template_header())?;
+    atomic_write(path, gitignore_in_template_header())?;
 
     Ok(BootstrapStatus::Initialized)
-}
-
-fn ensure_gitignore_file() -> std::io::Result<()> {
-    let path = Path::new(".gitignore");
-    if let Err(e) = std::fs::metadata(path) {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            match std::fs::File::create(path) {
-                Ok(_) => return Ok(()),
-                Err(_) => return Err(e),
-            }
-        }
-    }
-    Ok(())
 }
 
 fn refuse_if_gitignore_in_exists(command: &str) -> std::io::Result<()> {
@@ -245,7 +237,7 @@ fn restore_gitignore_in_file() -> std::io::Result<()> {
     let mut content = String::new();
     file.read_to_string(&mut content)?;
     let restored = add_gitignore_in_header(&restore::restore(&content));
-    std::fs::write(".gitignore.in", restored)?;
+    atomic_write(Path::new(".gitignore.in"), restored)?;
     Ok(())
 }
 
@@ -267,7 +259,10 @@ fn infer_gitignore_in_file(
             min_overlap,
         },
     )?;
-    std::fs::write(".gitignore.in", add_gitignore_in_header(&inferred))?;
+    atomic_write(
+        Path::new(".gitignore.in"),
+        add_gitignore_in_header(&inferred),
+    )?;
     Ok(())
 }
 
@@ -300,7 +295,7 @@ fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io
             edit::remove_templates(&mut script, &templates)?;
         }
     }
-    std::fs::write(".gitignore.in", edit::render(&script))?;
+    atomic_write(Path::new(".gitignore.in"), edit::render(&script))?;
     Ok(())
 }
 
