@@ -351,14 +351,13 @@ mod tests {
 
     impl CwdGuard {
         fn new(temp_dir: &std::path::Path) -> Self {
-            let lock = cwd_lock()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let original_dir =
-                std::env::current_dir().expect("failed to get current dir");
-            std::env::set_current_dir(temp_dir)
-                .expect("failed to change current dir");
-            CwdGuard { _lock: lock, original_dir }
+            let lock = cwd_lock().lock().unwrap_or_else(|e| e.into_inner());
+            let original_dir = std::env::current_dir().expect("failed to get current dir");
+            std::env::set_current_dir(temp_dir).expect("failed to change current dir");
+            CwdGuard {
+                _lock: lock,
+                original_dir,
+            }
         }
     }
 
