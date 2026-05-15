@@ -1,4 +1,27 @@
-use std::process::ExitStatus;
+use std::process::{ExitStatus, Output};
+use std::sync::mpsc;
+use std::time::Duration;
+
+const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn run_gibo_with_timeout(args: &[&str]) -> std::io::Result<Output> {
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = std::process::Command::new("gibo").args(&args).output();
+        let _ = tx.send(result);
+    });
+    match rx.recv_timeout(SUBPROCESS_TIMEOUT) {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!(
+                "gibo timed out after {}s",
+                SUBPROCESS_TIMEOUT.as_secs()
+            ),
+        )),
+    }
+}
 
 fn validate_gibo_command_output(
     status: ExitStatus,
@@ -46,10 +69,7 @@ fn validate_gibo_list_output(
 }
 
 pub fn gibo_command(target: &str) -> std::io::Result<String> {
-    let output = std::process::Command::new("gibo")
-        .arg("dump")
-        .arg(target)
-        .output()?;
+    let output = run_gibo_with_timeout(&["dump", target])?;
 
     let stdout = match String::from_utf8(output.stdout) {
         Ok(it) => it,
@@ -63,7 +83,7 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
 }
 
 pub fn gibo_list() -> std::io::Result<Vec<String>> {
-    let output = std::process::Command::new("gibo").arg("list").output()?;
+    let output = run_gibo_with_timeout(&["list"])?;
     let stdout = match String::from_utf8(output.stdout) {
         Ok(it) => it,
         Err(err) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err)),
