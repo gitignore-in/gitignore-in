@@ -1,6 +1,16 @@
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use std::time::Duration;
 use url::Url;
+
+const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn build_client() -> std::io::Result<Client> {
+    Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .build()
+        .map_err(|e| std::io::Error::other(format!("Failed to build HTTP client: {e}")))
+}
 
 const BASE_URL: &str = "https://www.toptal.com/developers/gitignore/api/";
 
@@ -69,7 +79,7 @@ const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 
 pub fn gi_command(target: &str) -> std::io::Result<String> {
     let url = target_url(target)?;
-    let client = Client::new();
+    let client = build_client()?;
     let response = match client
         .get(url.clone())
         .header("User-Agent", USER_AGENT)
@@ -104,7 +114,7 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
 
 pub fn gi_list() -> std::io::Result<Vec<String>> {
     let url = format!("{BASE_URL}list?format=lines");
-    let client = Client::new();
+    let client = build_client()?;
     let response = match client.get(&url).header("User-Agent", USER_AGENT).send() {
         Ok(r) => r,
         Err(e) => {
