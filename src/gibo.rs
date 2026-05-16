@@ -15,10 +15,7 @@ fn run_gibo_with_timeout(args: &[&str]) -> std::io::Result<Output> {
         Ok(result) => result,
         Err(_) => Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
-            format!(
-                "gibo timed out after {}s",
-                SUBPROCESS_TIMEOUT.as_secs()
-            ),
+            format!("gibo timed out after {}s", SUBPROCESS_TIMEOUT.as_secs()),
         )),
     }
 }
