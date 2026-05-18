@@ -10,6 +10,7 @@ pub enum GitIgnoreStatement {
     Gibo(Gibo),
     Gi(Gi),
     Echo(Echo),
+    Invalid(Invalid),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,4 +36,9 @@ pub enum Gi {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Echo {
     Content(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Invalid {
+    Line { content: String, reason: String },
 }

@@ -50,3 +50,28 @@ fn build_with_existing_gitignore_in_produces_gitignore() {
     let gitignore = std::fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
     assert!(gitignore.contains("*.log"));
 }
+
+#[test]
+fn build_rejects_multiple_template_names_on_one_line() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join(".gitignore.in"),
+        "# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n\ngibo dump Rust macOS\n",
+    )
+    .unwrap();
+
+    let output = Command::new(BIN).current_dir(tmp.path()).output().unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should stay reserved for data output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("gibo dump expects one template per line"),
+        "stderr should explain the invalid template line: {stderr}"
+    );
+    assert!(!tmp.path().join(".gitignore").exists());
+}
