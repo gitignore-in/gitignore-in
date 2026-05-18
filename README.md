@@ -70,6 +70,8 @@ are case-sensitive and match the single-space forms above (`gibo dump `,
 `gi `, and `echo `). Leading indentation, tabs between command words, or
 unknown commands are preserved when `.gitignore.in` is rewritten, but they do
 not produce generated `.gitignore` entries.
+Template provider lines must contain exactly one template name after the prefix;
+write multiple templates as separate lines instead of `gibo dump Rust macOS`.
 
 `echo` lines are parsed with shell-like quoting and then normalized as command
 arguments. For example, `echo '!.gitignore'` emits `!.gitignore`, and repeated

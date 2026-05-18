@@ -4,7 +4,7 @@ use crate::{
     format::{GENERATED_HEADER_LINES, SEPARATOR},
     gi::gi_command,
     gibo::gibo_command,
-    script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Meaningless},
+    script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Invalid, Meaningless},
 };
 
 pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
@@ -55,6 +55,12 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 }
                 result.push_str(&separator());
                 result.push_str(&format!("{echo}\n"));
+            }
+            GitIgnoreStatement::Invalid(Invalid::Line { reason, .. }) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    reason,
+                ));
             }
         }
     }
@@ -132,5 +138,23 @@ echo hello
         let script = parse_text(text);
         let err = build(script).unwrap_err();
         assert!(err.to_string().contains("reserved section header prefix"));
+    }
+
+    #[test]
+    fn test_multi_template_gibo_line_is_rejected() {
+        let text = "gibo dump Rust macOS\n";
+        let script = parse_text(text);
+        let err = build(script).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("one template per line"));
+    }
+
+    #[test]
+    fn test_multi_template_gi_line_is_rejected() {
+        let text = "gi Rust macOS\n";
+        let script = parse_text(text);
+        let err = build(script).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("one template per line"));
     }
 }

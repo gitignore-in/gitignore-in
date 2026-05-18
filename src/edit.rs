@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     gi::gi_list,
     gibo::gibo_list,
-    script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Meaningless},
+    script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Invalid, Meaningless},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,6 +171,7 @@ pub(crate) fn render(script: &GitIgnoreIn) -> String {
             GitIgnoreStatement::Echo(Echo::Content(content)) => {
                 format!("echo {}", shell_word(content))
             }
+            GitIgnoreStatement::Invalid(Invalid::Line { content, .. }) => content.clone(),
         })
         .collect();
 
