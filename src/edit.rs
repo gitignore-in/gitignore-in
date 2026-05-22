@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io};
 
 use crate::{
     gi::gi_list,
@@ -24,21 +24,52 @@ pub(crate) struct Catalog {
 }
 
 impl Catalog {
-    pub(crate) fn load() -> std::io::Result<Self> {
-        let mut catalog = Self::default();
+    pub(crate) fn load() -> io::Result<Self> {
+        Self::load_from(gibo_list, gi_list)
+    }
 
-        for target in gibo_list()? {
-            catalog.insert(TemplateRef {
-                provider: Provider::Gibo,
-                target,
-            });
+    fn load_from(
+        load_gibo: impl FnOnce() -> io::Result<Vec<String>>,
+        load_gi: impl FnOnce() -> io::Result<Vec<String>>,
+    ) -> io::Result<Self> {
+        let mut catalog = Self::default();
+        let mut errors = Vec::new();
+
+        match load_gibo() {
+            Ok(targets) => {
+                for target in targets {
+                    catalog.insert(TemplateRef {
+                        provider: Provider::Gibo,
+                        target,
+                    });
+                }
+            }
+            Err(error) => errors.push(("gibo", error)),
         }
 
-        for target in gi_list()? {
-            catalog.insert(TemplateRef {
-                provider: Provider::Gi,
-                target,
-            });
+        match load_gi() {
+            Ok(targets) => {
+                for target in targets {
+                    catalog.insert(TemplateRef {
+                        provider: Provider::Gi,
+                        target,
+                    });
+                }
+            }
+            Err(error) => errors.push(("gitignore.io", error)),
+        }
+
+        if catalog.entries.is_empty() && !errors.is_empty() {
+            let kind = errors[0].1.kind();
+            let details = errors
+                .into_iter()
+                .map(|(provider, error)| format!("{provider}: {error}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(io::Error::new(
+                kind,
+                format!("Failed to load templates from any provider ({details})"),
+            ));
         }
 
         Ok(catalog)
@@ -451,5 +482,72 @@ mod tests {
                 }
             ]
         );
+    }
+
+    #[test]
+    fn load_from_keeps_gibo_entries_when_gi_list_fails() {
+        let catalog = Catalog::load_from(
+            || Ok(vec!["Rust".to_string()]),
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "offline",
+                ))
+            },
+        )
+        .expect("gibo catalog should be usable when gitignore.io is unavailable");
+
+        assert_eq!(
+            catalog.search(&[]),
+            vec![TemplateRef {
+                provider: Provider::Gibo,
+                target: "Rust".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn load_from_keeps_gi_entries_when_gibo_list_fails() {
+        let catalog = Catalog::load_from(
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "missing gibo",
+                ))
+            },
+            || Ok(vec!["Node".to_string()]),
+        )
+        .expect("gitignore.io catalog should be usable when gibo is unavailable");
+
+        assert_eq!(
+            catalog.search(&[]),
+            vec![TemplateRef {
+                provider: Provider::Gi,
+                target: "Node".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn load_from_errors_when_all_providers_fail() {
+        let error = Catalog::load_from(
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "missing gibo",
+                ))
+            },
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "offline",
+                ))
+            },
+        )
+        .expect_err("catalog load should fail when no provider can list templates");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(error.to_string().contains("gibo: missing gibo"));
+        assert!(error.to_string().contains("gitignore.io: offline"));
     }
 }
