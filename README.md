@@ -140,6 +140,9 @@ Exit status values are:
 - `echo <line>` and `# ...` have no external dependency.
 
 If a `.gitignore.in` mixes `gibo` and `gi` lines, both prerequisites apply.
+Catalog lookup commands such as `search` and `add` load provider template lists
+best-effort: if one provider list is temporarily unavailable, templates from the
+other provider remain usable.
 
 ## Installation
 
