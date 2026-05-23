@@ -49,8 +49,13 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
     let root = gibo_root()?;
     // Resolve to a commit SHA so we always get a detached HEAD regardless of
     // whether ref_spec is a branch, tag, or full SHA.
-    let resolve_output =
-        run_git_with_timeout(&["-C", &root, "rev-parse", "--verify", &format!("{ref_spec}^{{commit}}")])?;
+    let resolve_output = run_git_with_timeout(&[
+        "-C",
+        &root,
+        "rev-parse",
+        "--verify",
+        &format!("{ref_spec}^{{commit}}"),
+    ])?;
     if !resolve_output.status.success() {
         let stderr = String::from_utf8_lossy(&resolve_output.stderr);
         return Err(std::io::Error::other(format!(
@@ -60,8 +65,7 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
     let sha = String::from_utf8(resolve_output.stdout)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let sha = sha.trim();
-    let checkout_output =
-        run_git_with_timeout(&["-C", &root, "checkout", "--detach", sha])?;
+    let checkout_output = run_git_with_timeout(&["-C", &root, "checkout", "--detach", sha])?;
     if !checkout_output.status.success() {
         let stderr = String::from_utf8_lossy(&checkout_output.stderr);
         return Err(std::io::Error::other(format!(
