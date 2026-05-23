@@ -144,6 +144,30 @@ Catalog lookup commands such as `search` and `add` load provider template lists
 best-effort: if one provider list is temporarily unavailable, templates from the
 other provider remain usable.
 
+## Reproducible builds
+
+By default, `gibo dump` fetches templates from the latest commit of the
+[boilerplates database](https://github.com/toptal/gitignore), so running
+`gitignore.in` at different times may produce different `.gitignore` output
+even from the same `.gitignore.in` input.
+
+To make a build reproducible — for example in CI — pin the boilerplates
+database to a specific commit before running `gitignore.in`:
+
+```sh
+export GITIGNORE_IN_BOILERPLATES_REF=<branch|tag|full-SHA>
+gitignore.in
+```
+
+When set, `gitignore.in` checks out the boilerplates database at the given ref
+before generating `.gitignore`. The value is resolved to a commit SHA and the
+database is left in detached HEAD state, matching the behaviour of the
+[`boilerplates_ref` input](https://github.com/gitignore-in/gh-action?tab=readme-ov-file)
+in the GitHub Action.
+
+> **Note**: this pins the `gibo` boilerplates only. Output from `gi` lines
+> still reflects the current state of `https://www.toptal.com/developers/gitignore/api/`.
+
 ## Installation
 
 ### Binary Releases

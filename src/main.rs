@@ -112,20 +112,32 @@ enum Commands {
     },
 }
 
+fn pin_boilerplates_if_requested() -> std::io::Result<()> {
+    if let Ok(ref_spec) = std::env::var("GITIGNORE_IN_BOILERPLATES_REF") {
+        if !ref_spec.is_empty() {
+            gibo::pin_boilerplates(&ref_spec)?;
+        }
+    }
+    Ok(())
+}
+
 fn run(cli: Cli) -> std::io::Result<()> {
     match cli.command {
         Some(Commands::Search { queries }) => search_templates(queries),
         Some(Commands::Add { templates }) => {
+            pin_boilerplates_if_requested()?;
             update_gitignore_in_file(UpdateMode::Add, templates)?;
             eprintln!("Updated .gitignore.in");
             build_gitignore()
         }
         Some(Commands::Remove { templates }) => {
+            pin_boilerplates_if_requested()?;
             update_gitignore_in_file(UpdateMode::Remove, templates)?;
             eprintln!("Updated .gitignore.in");
             build_gitignore()
         }
         Some(Commands::Restore) => {
+            pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("restore")?;
             restore_gitignore_in_file()?;
             eprintln!("Restored .gitignore.in");
@@ -136,6 +148,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
             gi,
             min_overlap,
         }) => {
+            pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
             infer_gitignore_in_file(gibo, gi, min_overlap)?;
             eprintln!("Inferred .gitignore.in");

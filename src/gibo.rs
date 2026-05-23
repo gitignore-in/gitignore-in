@@ -4,6 +4,77 @@ use std::time::Duration;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(60);
 
+pub fn gibo_root() -> std::io::Result<String> {
+    let output = run_gibo_with_timeout(&["root"])?;
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let stderr = String::from_utf8(output.stderr)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    if !output.status.success() {
+        let code = output
+            .status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "<signal>".to_string());
+        return Err(std::io::Error::other(format!(
+            "gibo root failed: exit={code} stderr={stderr}"
+        )));
+    }
+    let root = stdout.trim().to_string();
+    if root.is_empty() {
+        return Err(std::io::Error::other(
+            "gibo root returned empty output; boilerplates database not initialised",
+        ));
+    }
+    Ok(root)
+}
+
+fn run_git_with_timeout(args: &[&str]) -> std::io::Result<Output> {
+    let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = std::process::Command::new("git").args(&args).output();
+        let _ = tx.send(result);
+    });
+    match rx.recv_timeout(SUBPROCESS_TIMEOUT) {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("git timed out after {}s", SUBPROCESS_TIMEOUT.as_secs()),
+        )),
+    }
+}
+
+pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
+    let root = gibo_root()?;
+    // Resolve to a commit SHA so we always get a detached HEAD regardless of
+    // whether ref_spec is a branch, tag, or full SHA.
+    let resolve_output = run_git_with_timeout(&[
+        "-C",
+        &root,
+        "rev-parse",
+        "--verify",
+        &format!("{ref_spec}^{{commit}}"),
+    ])?;
+    if !resolve_output.status.success() {
+        let stderr = String::from_utf8_lossy(&resolve_output.stderr);
+        return Err(std::io::Error::other(format!(
+            "Cannot resolve {ref_spec:?} in boilerplates at {root}: {stderr}"
+        )));
+    }
+    let sha = String::from_utf8(resolve_output.stdout)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let sha = sha.trim();
+    let checkout_output = run_git_with_timeout(&["-C", &root, "checkout", "--detach", sha])?;
+    if !checkout_output.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+        return Err(std::io::Error::other(format!(
+            "Failed to pin boilerplates to {sha} ({ref_spec:?}) in {root}: {stderr}"
+        )));
+    }
+    Ok(())
+}
+
 fn run_gibo_with_timeout(args: &[&str]) -> std::io::Result<Output> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let (tx, rx) = mpsc::channel();
