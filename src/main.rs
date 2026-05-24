@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use log::debug;
 use std::{
     io::{ErrorKind, Read, Write},
     path::Path,
@@ -34,6 +35,7 @@ fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
 }
 
 fn main() -> ExitCode {
+    env_logger::init();
     let cli = Cli::parse();
     run_cli(cli)
 }
@@ -164,13 +166,18 @@ enum UpdateMode {
 }
 
 fn build_gitignore() -> std::io::Result<()> {
+    let started = std::time::Instant::now();
     match bootstrap_gitignore_in_file() {
-        Ok(BootstrapStatus::AlreadyPresent) => {}
+        Ok(BootstrapStatus::AlreadyPresent) => {
+            debug!("bootstrap: .gitignore.in already present");
+        }
         Ok(BootstrapStatus::Initialized) => {
             eprintln!("Initialized .gitignore.in");
+            debug!("bootstrap: initialized .gitignore.in from template");
         }
         Ok(BootstrapStatus::Inferred) => {
             eprintln!("Inferred .gitignore.in from .gitignore");
+            debug!("bootstrap: inferred .gitignore.in from existing .gitignore");
         }
         Err(e) => {
             return Err(std::io::Error::new(
@@ -180,10 +187,18 @@ fn build_gitignore() -> std::io::Result<()> {
         }
     }
     let statements = parse_gitignore_in_file()?;
+    debug!(
+        "parsed {} statements from .gitignore.in",
+        statements.content.len()
+    );
     let result = build::build(statements)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
     eprintln!("Generated .gitignore");
+    debug!(
+        "build_gitignore complete ({:.0}ms)",
+        started.elapsed().as_millis()
+    );
     Ok(())
 }
 

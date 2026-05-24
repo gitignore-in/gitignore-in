@@ -1,3 +1,4 @@
+use log::debug;
 use std::process::{ExitStatus, Output};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -137,7 +138,15 @@ fn validate_gibo_list_output(
 }
 
 pub fn gibo_command(target: &str) -> std::io::Result<String> {
+    let started = std::time::Instant::now();
     let output = run_gibo_with_timeout(&["dump", target])?;
+    let elapsed_ms = started.elapsed().as_millis();
+    let code = output
+        .status
+        .code()
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "<signal>".to_string());
+    debug!("gibo dump {target} -> exit={code} ({elapsed_ms:.0}ms)");
 
     let stdout = match String::from_utf8(output.stdout) {
         Ok(it) => it,
@@ -151,7 +160,15 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
 }
 
 pub fn gibo_list() -> std::io::Result<Vec<String>> {
+    let started = std::time::Instant::now();
     let output = run_gibo_with_timeout(&["list"])?;
+    let elapsed_ms = started.elapsed().as_millis();
+    let code = output
+        .status
+        .code()
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "<signal>".to_string());
+    debug!("gibo list -> exit={code} ({elapsed_ms:.0}ms)");
     let stdout = match String::from_utf8(output.stdout) {
         Ok(it) => it,
         Err(err) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err)),

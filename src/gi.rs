@@ -1,3 +1,4 @@
+use log::debug;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use std::time::Duration;
@@ -80,6 +81,7 @@ const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 pub fn gi_command(target: &str) -> std::io::Result<String> {
     let url = target_url(target)?;
     let client = build_client()?;
+    let started = std::time::Instant::now();
     let response = match client
         .get(url.clone())
         .header("User-Agent", USER_AGENT)
@@ -94,6 +96,10 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
             } else {
                 std::io::ErrorKind::Other
             };
+            debug!(
+                "HTTP GET {url} -> error ({:.0}ms): {e}",
+                started.elapsed().as_millis()
+            );
             return Err(std::io::Error::new(
                 kind,
                 format!("Failed to request to {url}: {e}"),
@@ -101,6 +107,10 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         }
     };
     let status = response.status();
+    debug!(
+        "HTTP GET {url} -> {status} ({:.0}ms)",
+        started.elapsed().as_millis()
+    );
     let body = match response.text() {
         Ok(s) => s,
         Err(e) => {
@@ -115,6 +125,7 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
 pub fn gi_list() -> std::io::Result<Vec<String>> {
     let url = format!("{BASE_URL}list?format=lines");
     let client = build_client()?;
+    let started = std::time::Instant::now();
     let response = match client.get(&url).header("User-Agent", USER_AGENT).send() {
         Ok(r) => r,
         Err(e) => {
@@ -125,6 +136,10 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
             } else {
                 std::io::ErrorKind::Other
             };
+            debug!(
+                "HTTP GET {url} -> error ({:.0}ms): {e}",
+                started.elapsed().as_millis()
+            );
             return Err(std::io::Error::new(
                 kind,
                 format!("Failed to request to {url}: {e}"),
@@ -132,6 +147,10 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
         }
     };
     let status = response.status();
+    debug!(
+        "HTTP GET {url} -> {status} ({:.0}ms)",
+        started.elapsed().as_millis()
+    );
     let body = match response.text() {
         Ok(s) => s,
         Err(e) => {
