@@ -353,7 +353,10 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("{} exceeds size limit ({MAX_FILE_BYTES} bytes)", path.display()),
+            format!(
+                "{} exceeds size limit ({MAX_FILE_BYTES} bytes)",
+                path.display()
+            ),
         ));
     }
     let result = parser::parse_text(&content);

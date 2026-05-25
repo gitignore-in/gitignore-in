@@ -264,8 +264,7 @@ mod tests {
     #[test]
     fn test_validate_gibo_command_output_rejects_oversized_stdout() {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
-        let err =
-            validate_gibo_command_output(make_status(0), stdout, "", "C++").unwrap_err();
+        let err = validate_gibo_command_output(make_status(0), stdout, "", "C++").unwrap_err();
         assert!(err.to_string().contains("too large"));
     }
 

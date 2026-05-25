@@ -319,9 +319,8 @@ mod tests {
     #[test]
     fn test_validate_gi_list_response_rejects_oversized_body() {
         let body = "x".repeat(MAX_RESPONSE_BYTES + 1);
-        let err =
-            validate_gi_list_response(StatusCode::OK, body, "https://example.test/list")
-                .unwrap_err();
+        let err = validate_gi_list_response(StatusCode::OK, body, "https://example.test/list")
+            .unwrap_err();
         assert!(err.to_string().contains("too large"));
     }
 
