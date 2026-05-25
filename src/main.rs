@@ -25,6 +25,7 @@ const EXIT_GENERAL_ERROR: u8 = 1;
 const EXIT_USAGE_ERROR: u8 = 2;
 const EXIT_PERMISSION_DENIED: u8 = 13;
 const EXIT_TEMPORARY_FAILURE: u8 = 75;
+const MAX_FILE_BYTES: u64 = 1024 * 1024;
 
 fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
@@ -262,9 +263,15 @@ fn refuse_if_gitignore_in_exists(command: &str) -> std::io::Result<()> {
 
 fn restore_gitignore_in_file() -> std::io::Result<()> {
     let path = std::path::Path::new(".gitignore");
-    let mut file = std::fs::File::open(path)?;
+    let file = std::fs::File::open(path)?;
     let mut content = String::new();
-    file.read_to_string(&mut content)?;
+    file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
+    if content.len() as u64 > MAX_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
+        ));
+    }
     let restored = add_gitignore_in_header(&restore::restore(&content));
     atomic_write(Path::new(".gitignore.in"), restored)?;
     Ok(())
@@ -276,9 +283,15 @@ fn infer_gitignore_in_file(
     min_overlap: usize,
 ) -> std::io::Result<()> {
     let path = std::path::Path::new(".gitignore");
-    let mut file = std::fs::File::open(path)?;
+    let file = std::fs::File::open(path)?;
     let mut content = String::new();
-    file.read_to_string(&mut content)?;
+    file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
+    if content.len() as u64 > MAX_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
+        ));
+    }
 
     let inferred = infer::infer_with_options(
         &content,
@@ -334,9 +347,15 @@ fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
 }
 
 fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
-    let mut file = std::fs::File::open(path)?;
+    let file = std::fs::File::open(path)?;
     let mut content = String::new();
-    file.read_to_string(&mut content)?;
+    file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
+    if content.len() as u64 > MAX_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("{} exceeds size limit ({MAX_FILE_BYTES} bytes)", path.display()),
+        ));
+    }
     let result = parser::parse_text(&content);
     Ok(result)
 }
@@ -539,6 +558,17 @@ mod tests {
     fn add_gitignore_in_header_keeps_existing_header() {
         let content = "# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n";
         assert_eq!(add_gitignore_in_header(content), content);
+    }
+
+    #[test]
+    fn parse_path_rejects_oversized_file() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        let path = temp_dir.as_path().join("huge.in");
+        let oversized = "x".repeat((MAX_FILE_BYTES + 1) as usize);
+        std::fs::write(&path, oversized).expect("failed to write oversized file");
+        let err = parse_path(&path).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("exceeds size limit"));
     }
 
     #[test]
