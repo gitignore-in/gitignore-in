@@ -331,9 +331,15 @@ mod tests {
 
     #[test]
     fn test_run_command_with_timeout_rejects_slow_process() {
-        let args = vec!["-c".to_string(), "sleep 2".to_string()];
+        // Spawn `sleep` directly rather than `sh -c "sleep 2"`. On systems
+        // where the shell forks for `-c` (instead of exec'ing into the
+        // command), the orphaned grandchild keeps the inherited
+        // stdout/stderr pipes open after we kill the immediate child,
+        // blocking the reader threads until the grandchild finishes
+        // naturally.
+        let args = vec!["2".to_string()];
         let started = std::time::Instant::now();
-        let err = run_command_with_timeout("sh", &args, Duration::from_millis(50)).unwrap_err();
+        let err = run_command_with_timeout("sleep", &args, Duration::from_millis(50)).unwrap_err();
 
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
         assert!(
