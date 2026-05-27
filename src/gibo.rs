@@ -4,6 +4,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_SUBPROCESS_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
 pub fn gibo_root() -> std::io::Result<String> {
     let output = run_gibo_with_timeout(&["root"])?;
@@ -104,6 +105,12 @@ fn validate_gibo_command_output(
                 "Failed to get {target} from gibo: empty stdout (stderr={stderr})"
             )));
         }
+        if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
+            return Err(std::io::Error::other(format!(
+                "Failed to get {target} from gibo: output too large ({} bytes, max {MAX_SUBPROCESS_OUTPUT_BYTES})",
+                stdout.len()
+            )));
+        }
         return Ok(stdout);
     }
     let code = status
@@ -127,6 +134,12 @@ fn validate_gibo_list_output(
             .unwrap_or_else(|| "<signal>".to_string());
         return Err(std::io::Error::other(format!(
             "Failed to list templates from gibo: exit={code} stderr={stderr}"
+        )));
+    }
+    if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
+        return Err(std::io::Error::other(format!(
+            "Failed to list templates from gibo: output too large ({} bytes, max {MAX_SUBPROCESS_OUTPUT_BYTES})",
+            stdout.len()
         )));
     }
     Ok(stdout
@@ -246,6 +259,20 @@ mod tests {
             validate_gibo_list_output(make_status(127), String::new(), "gibo: command failed")
                 .unwrap_err();
         assert!(err.to_string().contains("exit=127"));
+    }
+
+    #[test]
+    fn test_validate_gibo_command_output_rejects_oversized_stdout() {
+        let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
+        let err = validate_gibo_command_output(make_status(0), stdout, "", "C++").unwrap_err();
+        assert!(err.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn test_validate_gibo_list_output_rejects_oversized_stdout() {
+        let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
+        let err = validate_gibo_list_output(make_status(0), stdout, "").unwrap_err();
+        assert!(err.to_string().contains("too large"));
     }
 
     #[test]
