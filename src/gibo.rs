@@ -1,6 +1,7 @@
 use log::debug;
-use std::process::{ExitStatus, Output};
-use std::sync::mpsc;
+use std::io::Read;
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::thread;
 use std::time::Duration;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(60);
@@ -33,18 +34,7 @@ pub fn gibo_root() -> std::io::Result<String> {
 
 fn run_git_with_timeout(args: &[&str]) -> std::io::Result<Output> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let result = std::process::Command::new("git").args(&args).output();
-        let _ = tx.send(result);
-    });
-    match rx.recv_timeout(SUBPROCESS_TIMEOUT) {
-        Ok(result) => result,
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            format!("git timed out after {}s", SUBPROCESS_TIMEOUT.as_secs()),
-        )),
-    }
+    run_command_with_timeout("git", &args, SUBPROCESS_TIMEOUT)
 }
 
 pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
@@ -79,18 +69,72 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
 
 fn run_gibo_with_timeout(args: &[&str]) -> std::io::Result<Output> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let result = std::process::Command::new("gibo").args(&args).output();
-        let _ = tx.send(result);
-    });
-    match rx.recv_timeout(SUBPROCESS_TIMEOUT) {
-        Ok(result) => result,
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            format!("gibo timed out after {}s", SUBPROCESS_TIMEOUT.as_secs()),
-        )),
+    run_command_with_timeout("gibo", &args, SUBPROCESS_TIMEOUT)
+}
+
+fn run_command_with_timeout(
+    program: &str,
+    args: &[String],
+    timeout: Duration,
+) -> std::io::Result<Output> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| std::io::Error::other(format!("{program} stdout was not captured")))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| std::io::Error::other(format!("{program} stderr was not captured")))?;
+
+    let stdout_handle = thread::spawn(move || read_to_end(stdout));
+    let stderr_handle = thread::spawn(move || read_to_end(stderr));
+    let deadline = std::time::Instant::now() + timeout;
+
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Output {
+                status,
+                stdout: join_reader(stdout_handle, "stdout")?,
+                stderr: join_reader(stderr_handle, "stderr")?,
+            });
+        }
+
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = join_reader(stdout_handle, "stdout");
+            let _ = join_reader(stderr_handle, "stderr");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("{program} timed out after {timeout:?}"),
+            ));
+        }
+
+        let remaining = deadline.saturating_duration_since(now);
+        thread::sleep(remaining.min(Duration::from_millis(10)));
     }
+}
+
+fn read_to_end(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn join_reader(
+    handle: thread::JoinHandle<std::io::Result<Vec<u8>>>,
+    stream: &str,
+) -> std::io::Result<Vec<u8>> {
+    handle
+        .join()
+        .map_err(|_| std::io::Error::other(format!("failed to join {stream} reader")))?
 }
 
 fn validate_gibo_command_output(
@@ -273,6 +317,35 @@ mod tests {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
         let err = validate_gibo_list_output(make_status(0), stdout, "").unwrap_err();
         assert!(err.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn test_run_command_with_timeout_captures_stdout() {
+        let args = vec!["stdout".to_string()];
+        let output = run_command_with_timeout("printf", &args, Duration::from_secs(1)).unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"stdout");
+        assert!(output.stderr.is_empty());
+    }
+
+    #[test]
+    fn test_run_command_with_timeout_rejects_slow_process() {
+        // Spawn `sleep` directly rather than `sh -c "sleep 2"`. On systems
+        // where the shell forks for `-c` (instead of exec'ing into the
+        // command), the orphaned grandchild keeps the inherited
+        // stdout/stderr pipes open after we kill the immediate child,
+        // blocking the reader threads until the grandchild finishes
+        // naturally.
+        let args = vec!["2".to_string()];
+        let started = std::time::Instant::now();
+        let err = run_command_with_timeout("sleep", &args, Duration::from_millis(50)).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "timeout should return before the child command completes"
+        );
     }
 
     #[test]
