@@ -1,4 +1,6 @@
-use crate::format::{GENERATED_HEADER_LINES as HEADER_LINES, LEGACY_GENERATED_HEADER_LINES, SEPARATOR};
+use crate::format::{
+    GENERATED_HEADER_LINES as HEADER_LINES, LEGACY_GENERATED_HEADER_LINES, SEPARATOR,
+};
 
 pub(crate) fn restore(text: &str) -> String {
     let mut result = Vec::new();
