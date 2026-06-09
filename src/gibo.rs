@@ -1,5 +1,6 @@
 use log::debug;
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -81,7 +82,10 @@ fn run_command_with_timeout(
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .process_group(0)
         .spawn()?;
+    let process_group_id = libc::pid_t::try_from(child.id())
+        .map_err(|_| std::io::Error::other(format!("{program} pid is out of range")))?;
 
     let stdout = child
         .stdout
@@ -107,10 +111,9 @@ fn run_command_with_timeout(
 
         let now = std::time::Instant::now();
         if now >= deadline {
+            let _ = kill_process_group(process_group_id);
             let _ = child.kill();
             let _ = child.wait();
-            let _ = join_reader(stdout_handle, "stdout");
-            let _ = join_reader(stderr_handle, "stderr");
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!("{program} timed out after {timeout:?}"),
@@ -120,6 +123,23 @@ fn run_command_with_timeout(
         let remaining = deadline.saturating_duration_since(now);
         thread::sleep(remaining.min(Duration::from_millis(10)));
     }
+}
+
+fn kill_process_group(process_group_id: libc::pid_t) -> std::io::Result<()> {
+    if process_group_id <= 0 {
+        return Err(std::io::Error::other("process group id must be positive"));
+    }
+
+    let result = unsafe { libc::kill(-process_group_id, libc::SIGKILL) };
+    if result == 0 {
+        return Ok(());
+    }
+
+    let err = std::io::Error::last_os_error();
+    if err.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(err)
 }
 
 fn read_to_end(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
@@ -331,12 +351,6 @@ mod tests {
 
     #[test]
     fn test_run_command_with_timeout_rejects_slow_process() {
-        // Spawn `sleep` directly rather than `sh -c "sleep 2"`. On systems
-        // where the shell forks for `-c` (instead of exec'ing into the
-        // command), the orphaned grandchild keeps the inherited
-        // stdout/stderr pipes open after we kill the immediate child,
-        // blocking the reader threads until the grandchild finishes
-        // naturally.
         let args = vec!["2".to_string()];
         let started = std::time::Instant::now();
         let err = run_command_with_timeout("sleep", &args, Duration::from_millis(50)).unwrap_err();
@@ -345,6 +359,19 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "timeout should return before the child command completes"
+        );
+    }
+
+    #[test]
+    fn test_run_command_with_timeout_rejects_shell_grandchild() {
+        let args = vec!["-c".to_string(), "sleep 2".to_string()];
+        let started = std::time::Instant::now();
+        let err = run_command_with_timeout("sh", &args, Duration::from_millis(50)).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "timeout should return before a shell grandchild can keep pipes open"
         );
     }
 
