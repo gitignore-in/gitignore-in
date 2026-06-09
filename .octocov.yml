@@ -2,11 +2,6 @@
 coverage:
   paths:
     - coverage.lcov
-codeToTestRatio:
-  code:
-    - "src/**/*.rs"
-  test:
-    - "tests/**/*.rs"
 testExecutionTime:
   if: true
 diff:
