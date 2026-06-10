@@ -6,6 +6,18 @@ use std::time::Duration;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_SUBPROCESS_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_SUBPROCESS_STDERR_BYTES: usize = 4 * 1024;
+
+fn truncate_stderr(s: &str) -> String {
+    if s.len() <= MAX_SUBPROCESS_STDERR_BYTES {
+        return s.to_string();
+    }
+    let mut end = MAX_SUBPROCESS_STDERR_BYTES;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{} ...[{} bytes truncated]", &s[..end], s.len() - end)
+}
 
 pub fn gibo_root() -> std::io::Result<String> {
     let output = run_gibo_with_timeout(&["root"])?;
@@ -20,7 +32,8 @@ pub fn gibo_root() -> std::io::Result<String> {
             .map(|c| c.to_string())
             .unwrap_or_else(|| "<signal>".to_string());
         return Err(std::io::Error::other(format!(
-            "gibo root failed: exit={code} stderr={stderr}"
+            "gibo root failed: exit={code} stderr={}",
+            truncate_stderr(&stderr)
         )));
     }
     let root = stdout.trim().to_string();
@@ -51,7 +64,8 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
     if !resolve_output.status.success() {
         let stderr = String::from_utf8_lossy(&resolve_output.stderr);
         return Err(std::io::Error::other(format!(
-            "Cannot resolve {ref_spec:?} in boilerplates at {root}: {stderr}"
+            "Cannot resolve {ref_spec:?} in boilerplates at {root}: {}",
+            truncate_stderr(&stderr)
         )));
     }
     let sha = String::from_utf8(resolve_output.stdout)
@@ -61,7 +75,8 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
     if !checkout_output.status.success() {
         let stderr = String::from_utf8_lossy(&checkout_output.stderr);
         return Err(std::io::Error::other(format!(
-            "Failed to pin boilerplates to {sha} ({ref_spec:?}) in {root}: {stderr}"
+            "Failed to pin boilerplates to {sha} ({ref_spec:?}) in {root}: {}",
+            truncate_stderr(&stderr)
         )));
     }
     Ok(())
@@ -146,7 +161,8 @@ fn validate_gibo_command_output(
     if status.success() {
         if stdout.is_empty() {
             return Err(std::io::Error::other(format!(
-                "Failed to get {target} from gibo: empty stdout (stderr={stderr})"
+                "Failed to get {target} from gibo: empty stdout (stderr={})",
+                truncate_stderr(stderr)
             )));
         }
         if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
@@ -162,7 +178,8 @@ fn validate_gibo_command_output(
         .map(|c| c.to_string())
         .unwrap_or_else(|| "<signal>".to_string());
     Err(std::io::Error::other(format!(
-        "Failed to get {target} from gibo: exit={code} stderr={stderr}"
+        "Failed to get {target} from gibo: exit={code} stderr={}",
+        truncate_stderr(stderr)
     )))
 }
 
@@ -177,7 +194,8 @@ fn validate_gibo_list_output(
             .map(|c| c.to_string())
             .unwrap_or_else(|| "<signal>".to_string());
         return Err(std::io::Error::other(format!(
-            "Failed to list templates from gibo: exit={code} stderr={stderr}"
+            "Failed to list templates from gibo: exit={code} stderr={}",
+            truncate_stderr(stderr)
         )));
     }
     if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
@@ -303,6 +321,31 @@ mod tests {
             validate_gibo_list_output(make_status(127), String::new(), "gibo: command failed")
                 .unwrap_err();
         assert!(err.to_string().contains("exit=127"));
+    }
+
+    #[test]
+    fn test_truncate_stderr_short() {
+        let s = "short error";
+        assert_eq!(truncate_stderr(s), s);
+    }
+
+    #[test]
+    fn test_truncate_stderr_long() {
+        let s = "x".repeat(MAX_SUBPROCESS_STDERR_BYTES + 100);
+        let result = truncate_stderr(&s);
+        assert!(result.len() < s.len(), "truncated result should be shorter");
+        assert!(
+            result.contains("truncated"),
+            "should include truncation marker"
+        );
+    }
+
+    #[test]
+    fn test_validate_gibo_command_output_truncates_oversized_stderr() {
+        let long_stderr = "e".repeat(MAX_SUBPROCESS_STDERR_BYTES + 1000);
+        let err = validate_gibo_command_output(make_status(1), String::new(), &long_stderr, "C++")
+            .unwrap_err();
+        assert!(err.to_string().contains("truncated"));
     }
 
     #[test]
