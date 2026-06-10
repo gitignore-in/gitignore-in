@@ -253,10 +253,7 @@ mod tests {
 
     #[test]
     fn quotes_multiword_gibo_candidate_command() {
-        let candidates = vec![candidate(
-            "gibo dump 'Visual Studio'",
-            &["*.suo", "*.user"],
-        )];
+        let candidates = vec![candidate("gibo dump 'Visual Studio'", &["*.suo", "*.user"])];
         let text = "*.suo\n*.user\n";
         let inferred = infer_from_candidates(text, &candidates, 2);
         assert_eq!(inferred, "gibo dump 'Visual Studio'\n");
