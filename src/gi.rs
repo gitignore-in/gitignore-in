@@ -1,6 +1,7 @@
 use log::debug;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use std::io::Read;
 use std::time::Duration;
 use url::Url;
 
@@ -140,14 +141,7 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         "HTTP GET {url} -> {status} ({:.0}ms)",
         started.elapsed().as_millis()
     );
-    let body = match response.text() {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(std::io::Error::other(format!(
-                "Failed to get {target} from {url}: {e}"
-            )));
-        }
-    };
+    let body = read_response_body_string(response, &format!("get {target} from {url}"))?;
     validate_gi_response(status, body, target, &url)
 }
 
@@ -180,15 +174,25 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
         "HTTP GET {url} -> {status} ({:.0}ms)",
         started.elapsed().as_millis()
     );
-    let body = match response.text() {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(std::io::Error::other(format!(
-                "Failed to get list from {url}: {e}"
-            )));
-        }
-    };
+    let body = read_response_body_string(response, &format!("get list from {url}"))?;
     validate_gi_list_response(status, body, &url)
+}
+
+fn read_response_body_string(
+    response: reqwest::blocking::Response,
+    context: &str,
+) -> std::io::Result<String> {
+    let limit = MAX_RESPONSE_BYTES as u64 + 1;
+    let mut buf = Vec::new();
+    if let Err(e) = response.take(limit).read_to_end(&mut buf) {
+        return Err(std::io::Error::other(format!("Failed to {context}: {e}")));
+    }
+    if buf.len() as u64 >= limit {
+        return Err(std::io::Error::other(format!(
+            "Failed to {context}: response body too large (> {MAX_RESPONSE_BYTES} bytes)"
+        )));
+    }
+    String::from_utf8(buf).map_err(|e| std::io::Error::other(format!("Failed to {context}: {e}")))
 }
 
 #[cfg(test)]

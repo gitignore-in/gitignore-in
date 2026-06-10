@@ -157,9 +157,15 @@ fn kill_process_group(process_group_id: libc::pid_t) -> std::io::Result<()> {
     Err(err)
 }
 
-fn read_to_end(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
+fn read_to_end(reader: impl Read) -> std::io::Result<Vec<u8>> {
+    let limit = MAX_SUBPROCESS_OUTPUT_BYTES as u64 + 1;
     let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes)?;
+    reader.take(limit).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 >= limit {
+        return Err(std::io::Error::other(format!(
+            "subprocess output exceeds {MAX_SUBPROCESS_OUTPUT_BYTES} bytes"
+        )));
+    }
     Ok(bytes)
 }
 
@@ -436,5 +442,21 @@ mod tests {
     fn test_gibo_command_fail() {
         let result = gibo_command("unknown-language");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_to_end_rejects_oversized_output() {
+        let data = vec![0u8; MAX_SUBPROCESS_OUTPUT_BYTES + 1];
+        let reader = std::io::Cursor::new(data);
+        let err = read_to_end(reader).unwrap_err();
+        assert!(err.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn test_read_to_end_accepts_max_bytes() {
+        let data = vec![0u8; MAX_SUBPROCESS_OUTPUT_BYTES];
+        let reader = std::io::Cursor::new(data.clone());
+        let result = read_to_end(reader).unwrap();
+        assert_eq!(result.len(), MAX_SUBPROCESS_OUTPUT_BYTES);
     }
 }
