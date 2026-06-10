@@ -62,7 +62,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     for target in &gibo_targets {
         let content = gibo_command(target)?;
         candidates.push(Candidate {
-            command: format!("gibo dump {target}"),
+            command: format!("gibo dump {}", shell_quote_target(target)),
             lines: normalize_content(&content),
         });
     }
@@ -70,7 +70,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     for target in &gi_targets {
         let content = gi_command(target)?;
         candidates.push(Candidate {
-            command: format!("gi {target}"),
+            command: format!("gi {}", shell_quote_target(target)),
             lines: normalize_content(&content),
         });
     }
@@ -208,6 +208,14 @@ fn residual_lines(text: &str, matched_counts: &mut HashMap<String, usize>) -> Ve
     result
 }
 
+fn shell_quote_target(text: &str) -> String {
+    if text.contains(|c: char| c.is_whitespace() || c == '\'') {
+        shell_quote(text)
+    } else {
+        text.to_string()
+    }
+}
+
 fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r#"'\''"#))
 }
@@ -253,6 +261,22 @@ mod tests {
         let inferred = infer_from_candidates(text, &candidates, 2);
         let expected = "gi node\n\n# existing comment\n# keep this too\necho 'custom.log'\n";
         assert_eq!(inferred, expected);
+    }
+
+    #[test]
+    fn quotes_multiword_gibo_candidate_command() {
+        let candidates = vec![candidate("gibo dump 'Visual Studio'", &["*.suo", "*.user"])];
+        let text = "*.suo\n*.user\n";
+        let inferred = infer_from_candidates(text, &candidates, 2);
+        assert_eq!(inferred, "gibo dump 'Visual Studio'\n");
+    }
+
+    #[test]
+    fn quotes_multiword_gi_candidate_command() {
+        let candidates = vec![candidate("gi 'Visual Studio'", &["*.suo", "*.user"])];
+        let text = "*.suo\n*.user\n";
+        let inferred = infer_from_candidates(text, &candidates, 2);
+        assert_eq!(inferred, "gi 'Visual Studio'\n");
     }
 
     #[test]
