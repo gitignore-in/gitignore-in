@@ -12,25 +12,32 @@ pub(crate) struct Candidate {
     pub(crate) lines: BTreeSet<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TemplateTargets {
+    All,
+    Explicit(Vec<String>),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct InferOptions {
-    pub(crate) gibo_targets: Vec<String>,
-    pub(crate) gi_targets: Vec<String>,
+    pub(crate) gibo_targets: TemplateTargets,
+    pub(crate) gi_targets: TemplateTargets,
     pub(crate) min_overlap: usize,
 }
 
 impl Default for InferOptions {
     fn default() -> Self {
         Self {
-            gibo_targets: Vec::new(),
-            gi_targets: Vec::new(),
+            gibo_targets: TemplateTargets::All,
+            gi_targets: TemplateTargets::All,
             min_overlap: 2,
         }
     }
 }
 
 pub(crate) fn infer_with_options(text: &str, options: &InferOptions) -> std::io::Result<String> {
-    let has_explicit_targets = !options.gibo_targets.is_empty() || !options.gi_targets.is_empty();
+    let has_explicit_targets = matches!(options.gibo_targets, TemplateTargets::Explicit(_))
+        || matches!(options.gi_targets, TemplateTargets::Explicit(_));
     if !has_explicit_targets && restore::looks_generated(text) {
         return Ok(restore::restore(text));
     }
@@ -45,21 +52,19 @@ pub(crate) fn infer_with_options(text: &str, options: &InferOptions) -> std::io:
 
 fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
-    let gibo_targets = if options.gibo_targets.is_empty() && options.gi_targets.is_empty() {
-        gibo_list()?
-    } else {
-        options.gibo_targets.clone()
+    let gibo_targets = match &options.gibo_targets {
+        TemplateTargets::All => gibo_list()?,
+        TemplateTargets::Explicit(targets) => targets.clone(),
     };
-    let gi_targets = if options.gi_targets.is_empty() && options.gibo_targets.is_empty() {
-        gi_list()?
-    } else {
-        options.gi_targets.clone()
+    let gi_targets = match &options.gi_targets {
+        TemplateTargets::All => gi_list()?,
+        TemplateTargets::Explicit(targets) => targets.clone(),
     };
 
     for target in &gibo_targets {
         let content = gibo_command(target)?;
         candidates.push(Candidate {
-            command: format!("gibo dump {target}"),
+            command: format!("gibo dump {}", shell_quote_target(target)),
             lines: normalize_content(&content),
         });
     }
@@ -67,7 +72,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     for target in &gi_targets {
         let content = gi_command(target)?;
         candidates.push(Candidate {
-            command: format!("gi {target}"),
+            command: format!("gi {}", shell_quote_target(target)),
             lines: normalize_content(&content),
         });
     }
@@ -205,6 +210,14 @@ fn residual_lines(text: &str, matched_counts: &mut HashMap<String, usize>) -> Ve
     result
 }
 
+fn shell_quote_target(text: &str) -> String {
+    if text.contains(|c: char| c.is_whitespace() || c == '\'') {
+        shell_quote(text)
+    } else {
+        text.to_string()
+    }
+}
+
 fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r#"'\''"#))
 }
@@ -218,6 +231,14 @@ mod tests {
             command: command.to_string(),
             lines: lines.iter().map(|line| line.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn default_options_select_all_provider_targets_explicitly() {
+        let options = InferOptions::default();
+
+        assert_eq!(options.gibo_targets, TemplateTargets::All);
+        assert_eq!(options.gi_targets, TemplateTargets::All);
     }
 
     #[test]
@@ -242,6 +263,22 @@ mod tests {
         let inferred = infer_from_candidates(text, &candidates, 2);
         let expected = "gi node\n\n# existing comment\n# keep this too\necho 'custom.log'\n";
         assert_eq!(inferred, expected);
+    }
+
+    #[test]
+    fn quotes_multiword_gibo_candidate_command() {
+        let candidates = vec![candidate("gibo dump 'Visual Studio'", &["*.suo", "*.user"])];
+        let text = "*.suo\n*.user\n";
+        let inferred = infer_from_candidates(text, &candidates, 2);
+        assert_eq!(inferred, "gibo dump 'Visual Studio'\n");
+    }
+
+    #[test]
+    fn quotes_multiword_gi_candidate_command() {
+        let candidates = vec![candidate("gi 'Visual Studio'", &["*.suo", "*.user"])];
+        let text = "*.suo\n*.user\n";
+        let inferred = infer_from_candidates(text, &candidates, 2);
+        assert_eq!(inferred, "gi 'Visual Studio'\n");
     }
 
     #[test]

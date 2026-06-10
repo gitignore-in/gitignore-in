@@ -33,11 +33,19 @@ fn validate_gi_response(
     url: &Url,
 ) -> std::io::Result<String> {
     if !status.is_success() {
-        return Err(std::io::Error::other(format!(
-            "Failed to get {target} from {url}: HTTP {} (body bytes={})",
-            status.as_u16(),
-            body.len()
-        )));
+        let kind = if status.is_server_error() {
+            std::io::ErrorKind::ConnectionAborted
+        } else {
+            std::io::ErrorKind::Other
+        };
+        return Err(std::io::Error::new(
+            kind,
+            format!(
+                "Failed to get {target} from {url}: HTTP {} (body bytes={})",
+                status.as_u16(),
+                body.len()
+            ),
+        ));
     }
     if body.len() > MAX_RESPONSE_BYTES {
         return Err(std::io::Error::other(format!(
@@ -64,11 +72,19 @@ fn validate_gi_list_response(
     url: &str,
 ) -> std::io::Result<Vec<String>> {
     if !status.is_success() {
-        return Err(std::io::Error::other(format!(
-            "Failed to get list from {url}: HTTP {} (body bytes={})",
-            status.as_u16(),
-            body.len()
-        )));
+        let kind = if status.is_server_error() {
+            std::io::ErrorKind::ConnectionAborted
+        } else {
+            std::io::ErrorKind::Other
+        };
+        return Err(std::io::Error::new(
+            kind,
+            format!(
+                "Failed to get list from {url}: HTTP {} (body bytes={})",
+                status.as_u16(),
+                body.len()
+            ),
+        ));
     }
     if body.len() > MAX_RESPONSE_BYTES {
         return Err(std::io::Error::other(format!(
@@ -253,6 +269,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("HTTP 500"));
+        assert_eq!(err.kind(), std::io::ErrorKind::ConnectionAborted);
     }
 
     #[test]
@@ -261,6 +278,20 @@ mod tests {
         let err = validate_gi_response(StatusCode::SERVICE_UNAVAILABLE, html, "X", &dummy_url())
             .unwrap_err();
         assert!(err.to_string().contains("HTTP 503"));
+        assert_eq!(err.kind(), std::io::ErrorKind::ConnectionAborted);
+    }
+
+    #[test]
+    fn test_validate_gi_response_rejects_4xx_with_other_kind() {
+        let err = validate_gi_response(
+            StatusCode::NOT_FOUND,
+            "Not found".to_string(),
+            "X",
+            &dummy_url(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("HTTP 404"));
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
     }
 
     #[test]
@@ -299,6 +330,19 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("HTTP 502"));
+        assert_eq!(err.kind(), std::io::ErrorKind::ConnectionAborted);
+    }
+
+    #[test]
+    fn test_validate_gi_list_response_rejects_4xx_with_other_kind() {
+        let err = validate_gi_list_response(
+            StatusCode::NOT_FOUND,
+            "Not found".to_string(),
+            "https://example.test/list",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("HTTP 404"));
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
     }
 
     #[test]

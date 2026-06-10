@@ -1,11 +1,24 @@
 use log::debug;
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
 use std::time::Duration;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_SUBPROCESS_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_SUBPROCESS_STDERR_BYTES: usize = 4 * 1024;
+
+fn truncate_stderr(s: &str) -> String {
+    if s.len() <= MAX_SUBPROCESS_STDERR_BYTES {
+        return s.to_string();
+    }
+    let mut end = MAX_SUBPROCESS_STDERR_BYTES;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{} ...[{} bytes truncated]", &s[..end], s.len() - end)
+}
 
 pub fn gibo_root() -> std::io::Result<String> {
     let output = run_gibo_with_timeout(&["root"])?;
@@ -20,7 +33,8 @@ pub fn gibo_root() -> std::io::Result<String> {
             .map(|c| c.to_string())
             .unwrap_or_else(|| "<signal>".to_string());
         return Err(std::io::Error::other(format!(
-            "gibo root failed: exit={code} stderr={stderr}"
+            "gibo root failed: exit={code} stderr={}",
+            truncate_stderr(&stderr)
         )));
     }
     let root = stdout.trim().to_string();
@@ -51,7 +65,8 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
     if !resolve_output.status.success() {
         let stderr = String::from_utf8_lossy(&resolve_output.stderr);
         return Err(std::io::Error::other(format!(
-            "Cannot resolve {ref_spec:?} in boilerplates at {root}: {stderr}"
+            "Cannot resolve {ref_spec:?} in boilerplates at {root}: {}",
+            truncate_stderr(&stderr)
         )));
     }
     let sha = String::from_utf8(resolve_output.stdout)
@@ -61,7 +76,8 @@ pub fn pin_boilerplates(ref_spec: &str) -> std::io::Result<()> {
     if !checkout_output.status.success() {
         let stderr = String::from_utf8_lossy(&checkout_output.stderr);
         return Err(std::io::Error::other(format!(
-            "Failed to pin boilerplates to {sha} ({ref_spec:?}) in {root}: {stderr}"
+            "Failed to pin boilerplates to {sha} ({ref_spec:?}) in {root}: {}",
+            truncate_stderr(&stderr)
         )));
     }
     Ok(())
@@ -81,7 +97,10 @@ fn run_command_with_timeout(
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .process_group(0)
         .spawn()?;
+    let process_group_id = libc::pid_t::try_from(child.id())
+        .map_err(|_| std::io::Error::other(format!("{program} pid is out of range")))?;
 
     let stdout = child
         .stdout
@@ -107,10 +126,9 @@ fn run_command_with_timeout(
 
         let now = std::time::Instant::now();
         if now >= deadline {
+            let _ = kill_process_group(process_group_id);
             let _ = child.kill();
             let _ = child.wait();
-            let _ = join_reader(stdout_handle, "stdout");
-            let _ = join_reader(stderr_handle, "stderr");
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!("{program} timed out after {timeout:?}"),
@@ -120,6 +138,23 @@ fn run_command_with_timeout(
         let remaining = deadline.saturating_duration_since(now);
         thread::sleep(remaining.min(Duration::from_millis(10)));
     }
+}
+
+fn kill_process_group(process_group_id: libc::pid_t) -> std::io::Result<()> {
+    if process_group_id <= 0 {
+        return Err(std::io::Error::other("process group id must be positive"));
+    }
+
+    let result = unsafe { libc::kill(-process_group_id, libc::SIGKILL) };
+    if result == 0 {
+        return Ok(());
+    }
+
+    let err = std::io::Error::last_os_error();
+    if err.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    Err(err)
 }
 
 fn read_to_end(mut reader: impl Read) -> std::io::Result<Vec<u8>> {
@@ -146,7 +181,8 @@ fn validate_gibo_command_output(
     if status.success() {
         if stdout.is_empty() {
             return Err(std::io::Error::other(format!(
-                "Failed to get {target} from gibo: empty stdout (stderr={stderr})"
+                "Failed to get {target} from gibo: empty stdout (stderr={})",
+                truncate_stderr(stderr)
             )));
         }
         if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
@@ -162,7 +198,8 @@ fn validate_gibo_command_output(
         .map(|c| c.to_string())
         .unwrap_or_else(|| "<signal>".to_string());
     Err(std::io::Error::other(format!(
-        "Failed to get {target} from gibo: exit={code} stderr={stderr}"
+        "Failed to get {target} from gibo: exit={code} stderr={}",
+        truncate_stderr(stderr)
     )))
 }
 
@@ -177,7 +214,8 @@ fn validate_gibo_list_output(
             .map(|c| c.to_string())
             .unwrap_or_else(|| "<signal>".to_string());
         return Err(std::io::Error::other(format!(
-            "Failed to list templates from gibo: exit={code} stderr={stderr}"
+            "Failed to list templates from gibo: exit={code} stderr={}",
+            truncate_stderr(stderr)
         )));
     }
     if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
@@ -306,6 +344,31 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_stderr_short() {
+        let s = "short error";
+        assert_eq!(truncate_stderr(s), s);
+    }
+
+    #[test]
+    fn test_truncate_stderr_long() {
+        let s = "x".repeat(MAX_SUBPROCESS_STDERR_BYTES + 100);
+        let result = truncate_stderr(&s);
+        assert!(result.len() < s.len(), "truncated result should be shorter");
+        assert!(
+            result.contains("truncated"),
+            "should include truncation marker"
+        );
+    }
+
+    #[test]
+    fn test_validate_gibo_command_output_truncates_oversized_stderr() {
+        let long_stderr = "e".repeat(MAX_SUBPROCESS_STDERR_BYTES + 1000);
+        let err = validate_gibo_command_output(make_status(1), String::new(), &long_stderr, "C++")
+            .unwrap_err();
+        assert!(err.to_string().contains("truncated"));
+    }
+
+    #[test]
     fn test_validate_gibo_command_output_rejects_oversized_stdout() {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
         let err = validate_gibo_command_output(make_status(0), stdout, "", "C++").unwrap_err();
@@ -331,12 +394,6 @@ mod tests {
 
     #[test]
     fn test_run_command_with_timeout_rejects_slow_process() {
-        // Spawn `sleep` directly rather than `sh -c "sleep 2"`. On systems
-        // where the shell forks for `-c` (instead of exec'ing into the
-        // command), the orphaned grandchild keeps the inherited
-        // stdout/stderr pipes open after we kill the immediate child,
-        // blocking the reader threads until the grandchild finishes
-        // naturally.
         let args = vec!["2".to_string()];
         let started = std::time::Instant::now();
         let err = run_command_with_timeout("sleep", &args, Duration::from_millis(50)).unwrap_err();
@@ -345,6 +402,19 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "timeout should return before the child command completes"
+        );
+    }
+
+    #[test]
+    fn test_run_command_with_timeout_rejects_shell_grandchild() {
+        let args = vec!["-c".to_string(), "sleep 2".to_string()];
+        let started = std::time::Instant::now();
+        let err = run_command_with_timeout("sh", &args, Duration::from_millis(50)).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "timeout should return before a shell grandchild can keep pipes open"
         );
     }
 
