@@ -295,6 +295,7 @@ fn infer_gitignore_in_file(
         ));
     }
 
+    let (gibo_targets, gi_targets) = infer_target_selection(gibo_targets, gi_targets);
     let inferred = infer::infer_with_options(
         &content,
         &infer::InferOptions {
@@ -308,6 +309,20 @@ fn infer_gitignore_in_file(
         add_gitignore_in_header(&inferred),
     )?;
     Ok(())
+}
+
+fn infer_target_selection(
+    gibo_targets: Vec<String>,
+    gi_targets: Vec<String>,
+) -> (infer::TemplateTargets, infer::TemplateTargets) {
+    if gibo_targets.is_empty() && gi_targets.is_empty() {
+        (infer::TemplateTargets::All, infer::TemplateTargets::All)
+    } else {
+        (
+            infer::TemplateTargets::Explicit(gibo_targets),
+            infer::TemplateTargets::Explicit(gi_targets),
+        )
+    }
 }
 
 fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io::Result<()> {
@@ -523,6 +538,26 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn infer_targets_select_all_when_both_providers_are_omitted() {
+        let (gibo_targets, gi_targets) = infer_target_selection(Vec::new(), Vec::new());
+
+        assert_eq!(gibo_targets, infer::TemplateTargets::All);
+        assert_eq!(gi_targets, infer::TemplateTargets::All);
+    }
+
+    #[test]
+    fn infer_targets_keep_empty_provider_explicit_when_other_provider_is_set() {
+        let (gibo_targets, gi_targets) =
+            infer_target_selection(Vec::new(), vec!["node".to_string()]);
+
+        assert_eq!(gibo_targets, infer::TemplateTargets::Explicit(Vec::new()));
+        assert_eq!(
+            gi_targets,
+            infer::TemplateTargets::Explicit(vec!["node".to_string()])
+        );
     }
 
     #[test]
