@@ -101,7 +101,9 @@ enum Commands {
     },
     /// Restore .gitignore.in from a generated .gitignore and rebuild .gitignore
     Restore,
-    /// Infer .gitignore.in from an existing .gitignore and rebuild .gitignore
+    /// Infer .gitignore.in from an existing .gitignore and rebuild .gitignore.
+    /// If both --gibo and --gi are omitted, all templates from both providers
+    /// are checked (may trigger many network requests).
     Infer {
         /// Comma-separated gibo targets to consider
         #[arg(long, value_delimiter = ',')]
