@@ -270,7 +270,7 @@ fn restore_gitignore_in_file() -> std::io::Result<()> {
     file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
+            std::io::ErrorKind::InvalidInput,
             format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
         ));
     }
@@ -290,7 +290,7 @@ fn infer_gitignore_in_file(
     file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
+            std::io::ErrorKind::InvalidInput,
             format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
         ));
     }
@@ -369,7 +369,7 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
     file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
+            std::io::ErrorKind::InvalidInput,
             format!(
                 "{} exceeds size limit ({MAX_FILE_BYTES} bytes)",
                 path.display()
@@ -607,8 +607,18 @@ mod tests {
         let oversized = "x".repeat((MAX_FILE_BYTES + 1) as usize);
         std::fs::write(&path, oversized).expect("failed to write oversized file");
         let err = parse_path(&path).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("exceeds size limit"));
+    }
+
+    #[test]
+    fn run_cli_maps_oversized_input_to_usage_exit_code() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.as_path());
+        let oversized = "x".repeat((MAX_FILE_BYTES + 1) as usize);
+        std::fs::write(".gitignore.in", oversized).expect("failed to write .gitignore.in");
+        let exit_code = run_cli(Cli { command: None });
+        assert_eq!(exit_code, ExitCode::from(EXIT_USAGE_ERROR));
     }
 
     #[test]
