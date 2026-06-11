@@ -161,10 +161,13 @@ pub(crate) fn remove_templates(
         .cloned()
         .collect();
     if !missing.is_empty() {
-        return Err(std::io::Error::other(format!(
-            "Template(s) not found in .gitignore.in: {}",
-            missing.join(", ")
-        )));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Template(s) not found in .gitignore.in: {}",
+                missing.join(", ")
+            ),
+        ));
     }
     let mut removed = Vec::new();
 
@@ -226,9 +229,10 @@ fn resolve_template(
 ) -> std::io::Result<TemplateRef> {
     let matches = catalog.matches(query);
     if matches.is_empty() {
-        return Err(std::io::Error::other(format!(
-            "Template `{query}` was not found in gibo or gitignore.io"
-        )));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Template `{query}` was not found in gibo or gitignore.io"),
+        ));
     }
 
     if let Some(existing_provider) = preferred_provider(script) {
@@ -424,6 +428,7 @@ mod tests {
             .expect_err("expected unknown template error");
 
         assert!(error.to_string().contains("unknown"));
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]
@@ -436,6 +441,7 @@ mod tests {
             .expect_err("expected missing template error");
 
         assert!(error.to_string().contains("node"));
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]
