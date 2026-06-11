@@ -8,3 +8,4 @@ if [ -z "${version}" ]; then
 fi
 
 perl -0pi -e 's/^version = ".*"$/version = "'"${version}"'"/m' Cargo.toml
+perl -0pi -e 's/(name = "gitignore-in"\nversion = )"[^"]*"/$1"'"${version}"'"/m' Cargo.lock
