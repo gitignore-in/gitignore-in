@@ -16,6 +16,14 @@ fn build_client() -> std::io::Result<Client> {
 }
 
 const BASE_URL: &str = "https://www.toptal.com/developers/gitignore/api/";
+const MAX_ERROR_BODY_CHARS: usize = 200;
+
+fn sanitize_error_body(body: &str) -> String {
+    body.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_ERROR_BODY_CHARS)
+        .collect()
+}
 
 fn target_url(target: &str) -> std::io::Result<Url> {
     let mut url = Url::parse(BASE_URL)
@@ -61,7 +69,8 @@ fn validate_gi_response(
     }
     if body.contains("ERROR") && body.contains("is undefined") {
         return Err(std::io::Error::other(format!(
-            "Failed to get {target} from {url}: {body}"
+            "Failed to get {target} from {url}: {}",
+            sanitize_error_body(&body)
         )));
     }
     Ok(body)
@@ -315,6 +324,45 @@ mod tests {
         let err = validate_gi_response(StatusCode::OK, body, "foo", &dummy_url()).unwrap_err();
         assert!(err.to_string().contains("ERROR"));
         assert!(err.to_string().contains("is undefined"));
+    }
+
+    #[test]
+    fn test_sanitize_error_body_strips_control_chars() {
+        // ESC (0x1b) and newline (0x0a) are control characters and are removed.
+        // Printable ANSI parameter bytes like '[', '3', '1', 'm' are kept but
+        // are harmless without the preceding ESC byte.
+        let body = "\x1b[31mERROR\x1b[0m: foo is undefined.\x0a";
+        assert_eq!(sanitize_error_body(body), "[31mERROR[0m: foo is undefined.");
+    }
+
+    #[test]
+    fn test_sanitize_error_body_truncates_long_input() {
+        let long = "A".repeat(MAX_ERROR_BODY_CHARS + 50);
+        let result = sanitize_error_body(&long);
+        assert_eq!(result.chars().count(), MAX_ERROR_BODY_CHARS);
+    }
+
+    #[test]
+    fn test_validate_gi_response_error_body_is_sanitized() {
+        // Embedded control characters in the API response body must not reach
+        // the error message verbatim.
+        let body = format!(
+            "\x1b[31mERROR\x1b[0m: rust is undefined.\x0a{}",
+            "x".repeat(300)
+        );
+        let err = validate_gi_response(StatusCode::OK, body, "rust", &dummy_url()).unwrap_err();
+        let msg = err.to_string();
+        // Control characters must be absent.
+        assert!(
+            !msg.chars().any(|c| c.is_control()),
+            "control char in: {msg:?}"
+        );
+        // Message is bounded (url/target prefix + up to MAX_ERROR_BODY_CHARS body).
+        assert!(
+            msg.len() < 512,
+            "error message unexpectedly long: {} chars",
+            msg.len()
+        );
     }
 
     #[test]
