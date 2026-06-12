@@ -17,6 +17,7 @@ permissions:
 jobs:
   octocov:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       # For incremental builds
       CARGO_INCREMENTAL: 1
