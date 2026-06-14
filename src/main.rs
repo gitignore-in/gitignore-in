@@ -135,22 +135,34 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Some(Commands::Search { queries }) => search_templates(queries),
         Some(Commands::Add { templates }) => {
             pin_boilerplates_if_requested()?;
-            update_gitignore_in_file(UpdateMode::Add, templates)?;
+            let new_in = compute_updated_gitignore_in(UpdateMode::Add, templates)?;
+            let new_gitignore = build_content_from_str(&new_in)?;
+            atomic_write(Path::new(".gitignore.in"), &new_in)?;
             eprintln!("Updated .gitignore.in");
-            build_gitignore()
+            atomic_write(Path::new(".gitignore"), new_gitignore)?;
+            eprintln!("Generated .gitignore");
+            Ok(())
         }
         Some(Commands::Remove { templates }) => {
             pin_boilerplates_if_requested()?;
-            update_gitignore_in_file(UpdateMode::Remove, templates)?;
+            let new_in = compute_updated_gitignore_in(UpdateMode::Remove, templates)?;
+            let new_gitignore = build_content_from_str(&new_in)?;
+            atomic_write(Path::new(".gitignore.in"), &new_in)?;
             eprintln!("Updated .gitignore.in");
-            build_gitignore()
+            atomic_write(Path::new(".gitignore"), new_gitignore)?;
+            eprintln!("Generated .gitignore");
+            Ok(())
         }
         Some(Commands::Restore) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("restore")?;
-            restore_gitignore_in_file()?;
+            let new_in = compute_restored_gitignore_in()?;
+            let new_gitignore = build_content_from_str(&new_in)?;
+            atomic_write(Path::new(".gitignore.in"), &new_in)?;
             eprintln!("Restored .gitignore.in");
-            build_gitignore()
+            atomic_write(Path::new(".gitignore"), new_gitignore)?;
+            eprintln!("Generated .gitignore");
+            Ok(())
         }
         Some(Commands::Infer {
             gibo,
@@ -159,9 +171,13 @@ fn run(cli: Cli) -> std::io::Result<()> {
         }) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
-            infer_gitignore_in_file(gibo, gi, min_overlap)?;
+            let new_in = compute_inferred_gitignore_in(gibo, gi, min_overlap)?;
+            let new_gitignore = build_content_from_str(&new_in)?;
+            atomic_write(Path::new(".gitignore.in"), &new_in)?;
             eprintln!("Inferred .gitignore.in");
-            build_gitignore()
+            atomic_write(Path::new(".gitignore"), new_gitignore)?;
+            eprintln!("Generated .gitignore");
+            Ok(())
         }
         None => build_gitignore(),
     }
@@ -245,7 +261,8 @@ fn bootstrap_gitignore_in_file() -> std::io::Result<BootstrapStatus> {
     }
 
     if Path::new(".gitignore").exists() {
-        infer_gitignore_in_file(Vec::new(), Vec::new(), 2)?;
+        let content = compute_inferred_gitignore_in(Vec::new(), Vec::new(), 2)?;
+        atomic_write(path, content)?;
         return Ok(BootstrapStatus::Inferred);
     }
 
@@ -267,7 +284,12 @@ fn refuse_if_gitignore_in_exists(command: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn restore_gitignore_in_file() -> std::io::Result<()> {
+fn build_content_from_str(gitignore_in_content: &str) -> std::io::Result<String> {
+    let statements = parser::parse_text(gitignore_in_content);
+    build::build(statements)
+}
+
+fn compute_restored_gitignore_in() -> std::io::Result<String> {
     let path = std::path::Path::new(".gitignore");
     let file = std::fs::File::open(path)?;
     let mut content = String::new();
@@ -278,16 +300,14 @@ fn restore_gitignore_in_file() -> std::io::Result<()> {
             format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
         ));
     }
-    let restored = add_gitignore_in_header(&restore::restore(&content));
-    atomic_write(Path::new(".gitignore.in"), restored)?;
-    Ok(())
+    Ok(add_gitignore_in_header(&restore::restore(&content)))
 }
 
-fn infer_gitignore_in_file(
+fn compute_inferred_gitignore_in(
     gibo_targets: Vec<String>,
     gi_targets: Vec<String>,
     min_overlap: usize,
-) -> std::io::Result<()> {
+) -> std::io::Result<String> {
     let path = std::path::Path::new(".gitignore");
     let file = std::fs::File::open(path)?;
     let mut content = String::new();
@@ -308,11 +328,7 @@ fn infer_gitignore_in_file(
             min_overlap,
         },
     )?;
-    atomic_write(
-        Path::new(".gitignore.in"),
-        add_gitignore_in_header(&inferred),
-    )?;
-    Ok(())
+    Ok(add_gitignore_in_header(&inferred))
 }
 
 fn infer_target_selection(
@@ -329,7 +345,10 @@ fn infer_target_selection(
     }
 }
 
-fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io::Result<()> {
+fn compute_updated_gitignore_in(
+    mode: UpdateMode,
+    templates: Vec<String>,
+) -> std::io::Result<String> {
     if templates.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -358,8 +377,7 @@ fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io
             edit::remove_templates(&mut script, &templates)?;
         }
     }
-    atomic_write(Path::new(".gitignore.in"), edit::render(&script))?;
-    Ok(())
+    Ok(edit::render(&script))
 }
 
 fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
