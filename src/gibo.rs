@@ -117,10 +117,12 @@ fn run_command_with_timeout(
 
     loop {
         if let Some(status) = child.try_wait()? {
+            let stdout = join_reader(stdout_handle, "stdout");
+            let stderr = join_reader(stderr_handle, "stderr");
             return Ok(Output {
                 status,
-                stdout: join_reader(stdout_handle, "stdout")?,
-                stderr: join_reader(stderr_handle, "stderr")?,
+                stdout: stdout?,
+                stderr: stderr?,
             });
         }
 
