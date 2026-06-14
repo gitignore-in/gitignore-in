@@ -20,6 +20,7 @@ permissions:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       released_version: ${{ steps.resolve.outputs.released_version }}
       candidate_version: ${{ steps.resolve.outputs.candidate_version }}
@@ -42,6 +43,7 @@ jobs:
 
   dispatch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: resolve
     strategy:
       fail-fast: false
