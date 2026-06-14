@@ -111,24 +111,35 @@ fn run_command_with_timeout(
         .take()
         .ok_or_else(|| std::io::Error::other(format!("{program} stderr was not captured")))?;
 
-    let stdout_handle = thread::spawn(move || read_to_end(stdout));
-    let stderr_handle = thread::spawn(move || read_to_end(stderr));
+    let mut stdout_handle = Some(thread::spawn(move || read_to_end(stdout)));
+    let mut stderr_handle = Some(thread::spawn(move || read_to_end(stderr)));
+    let mut stdout_bytes = None;
+    let mut stderr_bytes = None;
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
+        if let Err(error) = collect_finished_reader(&mut stdout_handle, &mut stdout_bytes, "stdout")
+        {
+            let _ = terminate_child(&mut child, process_group_id);
+            return Err(error);
+        }
+        if let Err(error) = collect_finished_reader(&mut stderr_handle, &mut stderr_bytes, "stderr")
+        {
+            let _ = terminate_child(&mut child, process_group_id);
+            return Err(error);
+        }
+
         if let Some(status) = child.try_wait()? {
             return Ok(Output {
                 status,
-                stdout: join_reader(stdout_handle, "stdout")?,
-                stderr: join_reader(stderr_handle, "stderr")?,
+                stdout: finish_reader(stdout_handle, stdout_bytes, "stdout")?,
+                stderr: finish_reader(stderr_handle, stderr_bytes, "stderr")?,
             });
         }
 
         let now = std::time::Instant::now();
         if now >= deadline {
-            let _ = kill_process_group(process_group_id);
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = terminate_child(&mut child, process_group_id);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!("{program} timed out after {timeout:?}"),
@@ -138,6 +149,16 @@ fn run_command_with_timeout(
         let remaining = deadline.saturating_duration_since(now);
         thread::sleep(remaining.min(Duration::from_millis(10)));
     }
+}
+
+fn terminate_child(
+    child: &mut std::process::Child,
+    process_group_id: libc::pid_t,
+) -> std::io::Result<()> {
+    let process_group_result = kill_process_group(process_group_id);
+    let child_kill_result = child.kill();
+    let wait_result = child.wait().map(|_| ());
+    process_group_result.or(child_kill_result).or(wait_result)
 }
 
 fn kill_process_group(process_group_id: libc::pid_t) -> std::io::Result<()> {
@@ -167,6 +188,40 @@ fn read_to_end(reader: impl Read) -> std::io::Result<Vec<u8>> {
         )));
     }
     Ok(bytes)
+}
+
+fn collect_finished_reader(
+    handle: &mut Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    bytes: &mut Option<Vec<u8>>,
+    stream: &str,
+) -> std::io::Result<()> {
+    let Some(handle_ref) = handle.as_ref() else {
+        return Ok(());
+    };
+    if !handle_ref.is_finished() {
+        return Ok(());
+    }
+
+    let joined = join_reader(
+        handle
+            .take()
+            .ok_or_else(|| std::io::Error::other(format!("{stream} reader missing")))?,
+        stream,
+    )?;
+    *bytes = Some(joined);
+    Ok(())
+}
+
+fn finish_reader(
+    handle: Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    bytes: Option<Vec<u8>>,
+    stream: &str,
+) -> std::io::Result<Vec<u8>> {
+    if let Some(bytes) = bytes {
+        return Ok(bytes);
+    }
+    let handle = handle.ok_or_else(|| std::io::Error::other(format!("{stream} reader missing")))?;
+    join_reader(handle, stream)
 }
 
 fn join_reader(
@@ -408,6 +463,22 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "timeout should return before the child command completes"
+        );
+    }
+
+    #[test]
+    fn test_run_command_with_timeout_rejects_oversized_stdout_before_timeout() {
+        let args = vec!["-c".to_string(), "trap '' PIPE; yes x; sleep 2".to_string()];
+        let started = std::time::Instant::now();
+        let err = run_command_with_timeout("sh", &args, Duration::from_secs(2)).unwrap_err();
+
+        assert!(
+            err.to_string().contains("subprocess output exceeds"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "reader error should return before the command timeout"
         );
     }
 
