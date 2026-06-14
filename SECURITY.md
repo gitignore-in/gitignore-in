@@ -17,7 +17,7 @@ Include:
 
 This project uses the following components that may be relevant for vulnerability tracking:
 
-- **OpenSSL** (vendored via `openssl` crate with `vendored = true`): TLS for HTTPS requests.
+- **rustls**: TLS implementation for HTTPS requests (via reqwest with rustls-tls backend).
 - **reqwest**: HTTP client library.
 
 ## Response
