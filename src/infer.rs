@@ -50,8 +50,11 @@ pub(crate) fn infer_with_options(text: &str, options: &InferOptions) -> std::io:
     ))
 }
 
+const MAX_CANDIDATES_TOTAL_BYTES: usize = 200 * 1024 * 1024;
+
 fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
+    let mut total_bytes: usize = 0;
     let gibo_targets = match &options.gibo_targets {
         TemplateTargets::All => gibo_list()?,
         TemplateTargets::Explicit(targets) => targets.clone(),
@@ -63,6 +66,12 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
 
     for target in &gibo_targets {
         let content = gibo_command(target)?;
+        total_bytes = total_bytes.saturating_add(content.len());
+        if total_bytes > MAX_CANDIDATES_TOTAL_BYTES {
+            return Err(std::io::Error::other(format!(
+                "aggregate template content exceeds {MAX_CANDIDATES_TOTAL_BYTES} bytes"
+            )));
+        }
         candidates.push(Candidate {
             command: format!("gibo dump {}", shell_quote_target(target)),
             lines: normalize_content(&content),
@@ -71,6 +80,12 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
 
     for target in &gi_targets {
         let content = gi_command(target)?;
+        total_bytes = total_bytes.saturating_add(content.len());
+        if total_bytes > MAX_CANDIDATES_TOTAL_BYTES {
+            return Err(std::io::Error::other(format!(
+                "aggregate template content exceeds {MAX_CANDIDATES_TOTAL_BYTES} bytes"
+            )));
+        }
         candidates.push(Candidate {
             command: format!("gi {}", shell_quote_target(target)),
             lines: normalize_content(&content),
@@ -231,6 +246,14 @@ mod tests {
             command: command.to_string(),
             lines: lines.iter().map(|line| line.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn aggregate_byte_limit_is_above_per_item_limit() {
+        // Each provider fetch is capped at 10 MB; the aggregate limit must be
+        // meaningfully larger so typical all-templates loads are not rejected.
+        const PER_ITEM_MAX: usize = 10 * 1024 * 1024;
+        const { assert!(MAX_CANDIDATES_TOTAL_BYTES > PER_ITEM_MAX) };
     }
 
     #[test]
