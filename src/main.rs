@@ -14,6 +14,7 @@ mod infer;
 mod parser;
 mod restore;
 mod script;
+mod shell;
 
 const AFTER_HELP: &str =
     "Official site: https://gitignore.in/\nRepository: https://github.com/gitignore-in/gitignore-in";
