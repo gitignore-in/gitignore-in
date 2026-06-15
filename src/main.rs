@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use log::debug;
 use std::{
-    io::{ErrorKind, Read, Write},
+    io::{ErrorKind, IsTerminal, Read, Write},
     path::Path,
     process::ExitCode,
 };
@@ -78,6 +78,9 @@ fn exit_code_for_error(e: &std::io::Error) -> u8 {
     after_help = AFTER_HELP
 )]
 struct Cli {
+    /// Suppress progress messages
+    #[arg(long, global = true)]
+    quiet: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -131,26 +134,27 @@ fn pin_boilerplates_if_requested() -> std::io::Result<()> {
 }
 
 fn run(cli: Cli) -> std::io::Result<()> {
+    let progress = Progress::new(cli.quiet);
     match cli.command {
         Some(Commands::Search { queries }) => search_templates(queries),
         Some(Commands::Add { templates }) => {
             pin_boilerplates_if_requested()?;
-            update_gitignore_in_file(UpdateMode::Add, templates)?;
-            eprintln!("Updated .gitignore.in");
-            build_gitignore()
+            update_gitignore_in_file(UpdateMode::Add, templates, &progress)?;
+            progress.message("Updated .gitignore.in");
+            build_gitignore(&progress)
         }
         Some(Commands::Remove { templates }) => {
             pin_boilerplates_if_requested()?;
-            update_gitignore_in_file(UpdateMode::Remove, templates)?;
-            eprintln!("Updated .gitignore.in");
-            build_gitignore()
+            update_gitignore_in_file(UpdateMode::Remove, templates, &progress)?;
+            progress.message("Updated .gitignore.in");
+            build_gitignore(&progress)
         }
         Some(Commands::Restore) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("restore")?;
             restore_gitignore_in_file()?;
-            eprintln!("Restored .gitignore.in");
-            build_gitignore()
+            progress.message("Restored .gitignore.in");
+            build_gitignore(&progress)
         }
         Some(Commands::Infer {
             gibo,
@@ -160,10 +164,28 @@ fn run(cli: Cli) -> std::io::Result<()> {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
             infer_gitignore_in_file(gibo, gi, min_overlap)?;
-            eprintln!("Inferred .gitignore.in");
-            build_gitignore()
+            progress.message("Inferred .gitignore.in");
+            build_gitignore(&progress)
         }
-        None => build_gitignore(),
+        None => build_gitignore(&progress),
+    }
+}
+
+struct Progress {
+    enabled: bool,
+}
+
+impl Progress {
+    fn new(quiet: bool) -> Self {
+        Self {
+            enabled: !quiet && std::io::stderr().is_terminal(),
+        }
+    }
+
+    fn message(&self, message: &str) {
+        if self.enabled {
+            eprintln!("{message}");
+        }
     }
 }
 
@@ -172,18 +194,18 @@ enum UpdateMode {
     Remove,
 }
 
-fn build_gitignore() -> std::io::Result<()> {
+fn build_gitignore(progress: &Progress) -> std::io::Result<()> {
     let started = std::time::Instant::now();
     match bootstrap_gitignore_in_file() {
         Ok(BootstrapStatus::AlreadyPresent) => {
             debug!("bootstrap: .gitignore.in already present");
         }
         Ok(BootstrapStatus::Initialized) => {
-            eprintln!("Initialized .gitignore.in");
+            progress.message("Initialized .gitignore.in");
             debug!("bootstrap: initialized .gitignore.in from template");
         }
         Ok(BootstrapStatus::Inferred) => {
-            eprintln!("Inferred .gitignore.in from .gitignore");
+            progress.message("Inferred .gitignore.in from .gitignore");
             debug!("bootstrap: inferred .gitignore.in from existing .gitignore");
         }
         Err(e) => {
@@ -201,7 +223,7 @@ fn build_gitignore() -> std::io::Result<()> {
     let result = build::build(statements)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
-    eprintln!("Generated .gitignore");
+    progress.message("Generated .gitignore");
     debug!(
         "build_gitignore complete ({:.0}ms)",
         started.elapsed().as_millis()
@@ -329,7 +351,11 @@ fn infer_target_selection(
     }
 }
 
-fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io::Result<()> {
+fn update_gitignore_in_file(
+    mode: UpdateMode,
+    templates: Vec<String>,
+    progress: &Progress,
+) -> std::io::Result<()> {
     if templates.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -339,10 +365,10 @@ fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io
 
     match bootstrap_gitignore_in_file() {
         Ok(BootstrapStatus::Initialized) => {
-            eprintln!("Initialized .gitignore.in");
+            progress.message("Initialized .gitignore.in");
         }
         Ok(BootstrapStatus::Inferred) => {
-            eprintln!("Inferred .gitignore.in from .gitignore");
+            progress.message("Inferred .gitignore.in from .gitignore");
         }
         Ok(BootstrapStatus::AlreadyPresent) => {}
         Err(e) => return Err(e),
@@ -443,7 +469,10 @@ mod tests {
     fn test_main() {
         let temp_dir = Temp::new_dir().expect("failed to create temp dir");
         let _guard = CwdGuard::new(temp_dir.as_path());
-        let result = run(Cli { command: None });
+        let result = run(Cli {
+            quiet: false,
+            command: None,
+        });
         assert!(result.is_ok());
         // check if the .gitignore.in file is in current directory
         let path = Path::new(".gitignore.in");
@@ -452,7 +481,10 @@ mod tests {
         assert!(content.contains("# See https://gitignore.in/"));
 
         // try again
-        let result = run(Cli { command: None });
+        let result = run(Cli {
+            quiet: false,
+            command: None,
+        });
         assert!(result.is_ok());
         assert!(path.exists());
     }
@@ -467,7 +499,10 @@ mod tests {
         )
         .expect("failed to write .gitignore");
 
-        let result = run(Cli { command: None });
+        let result = run(Cli {
+            quiet: false,
+            command: None,
+        });
         assert!(result.is_ok());
 
         let restored =
@@ -567,6 +602,7 @@ mod tests {
     #[test]
     fn run_cli_maps_invalid_input_to_usage_exit_code() {
         let exit_code = run_cli(Cli {
+            quiet: false,
             command: Some(Commands::Add {
                 templates: Vec::new(),
             }),
@@ -621,7 +657,10 @@ mod tests {
         let _guard = CwdGuard::new(temp_dir.as_path());
         let oversized = "x".repeat((MAX_FILE_BYTES + 1) as usize);
         std::fs::write(".gitignore.in", oversized).expect("failed to write .gitignore.in");
-        let exit_code = run_cli(Cli { command: None });
+        let exit_code = run_cli(Cli {
+            quiet: false,
+            command: None,
+        });
         assert_eq!(exit_code, ExitCode::from(EXIT_USAGE_ERROR));
     }
 
@@ -634,6 +673,7 @@ mod tests {
         std::fs::write(".gitignore.in", original).expect("failed to write .gitignore.in");
 
         let result = run(Cli {
+            quiet: false,
             command: Some(Commands::Restore),
         });
 
@@ -656,6 +696,7 @@ mod tests {
         .expect("failed to write .gitignore");
 
         let result = run(Cli {
+            quiet: false,
             command: Some(Commands::Restore),
         });
         assert!(result.is_ok(), "restore should succeed: {result:?}");
@@ -690,6 +731,7 @@ mod tests {
         .expect("failed to write .gitignore");
 
         let result = run(Cli {
+            quiet: false,
             command: Some(Commands::Infer {
                 gibo: Vec::new(),
                 gi: Vec::new(),
@@ -725,6 +767,7 @@ mod tests {
         std::fs::write(".gitignore.in", original).expect("failed to write .gitignore.in");
 
         let result = run(Cli {
+            quiet: false,
             command: Some(Commands::Infer {
                 gibo: Vec::new(),
                 gi: Vec::new(),

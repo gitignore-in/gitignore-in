@@ -7,7 +7,7 @@ fn binary() -> &'static str {
 }
 
 #[test]
-fn build_progress_goes_to_stderr() {
+fn build_progress_is_suppressed_when_stderr_is_not_a_tty() {
     let temp_dir = Temp::new_dir().expect("failed to create temp dir");
 
     let output = Command::new(binary())
@@ -25,9 +25,38 @@ fn build_progress_goes_to_stderr() {
         "stdout should not contain progress output: {}",
         String::from_utf8_lossy(&output.stdout)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Initialized .gitignore.in"));
-    assert!(stderr.contains("Generated .gitignore"));
+    assert!(
+        output.stderr.is_empty(),
+        "captured stderr should not contain progress output: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn quiet_suppresses_progress_output() {
+    let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+
+    let output = Command::new(binary())
+        .arg("--quiet")
+        .current_dir(temp_dir.as_path())
+        .output()
+        .expect("failed to run gitignore-in");
+
+    assert!(
+        output.status.success(),
+        "status: {:?}",
+        output.status.code()
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should not contain progress output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "stderr should not contain progress output: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
