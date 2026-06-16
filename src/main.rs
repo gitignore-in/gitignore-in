@@ -162,8 +162,10 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Some(Commands::Search { queries }) => search_templates(queries),
         Some(Commands::Add { templates }) => {
             pin_boilerplates_if_requested()?;
-            update_gitignore_in_file(UpdateMode::Add, templates, &progress)?;
-            progress.message("Updated .gitignore.in");
+            let updated = update_gitignore_in_file(UpdateMode::Add, templates, &progress)?;
+            if updated > 0 {
+                progress.message("Updated .gitignore.in");
+            }
             build_gitignore(&progress)
         }
         Some(Commands::Remove { templates }) => {
@@ -434,7 +436,7 @@ fn update_gitignore_in_file(
     mode: UpdateMode,
     templates: Vec<String>,
     progress: &Progress,
-) -> std::io::Result<()> {
+) -> std::io::Result<usize> {
     if templates.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -477,20 +479,18 @@ fn update_gitignore_in_file(
             ),
         ));
     }
-    match mode {
+    let changed = match mode {
         UpdateMode::Add => {
             let catalog = edit::Catalog::load()?;
-            edit::add_templates(&mut script, &catalog, &templates)?;
+            edit::add_templates(&mut script, &catalog, &templates)?.len()
         }
-        UpdateMode::Remove => {
-            edit::remove_templates(&mut script, &templates)?;
-        }
-    }
+        UpdateMode::Remove => edit::remove_templates(&mut script, &templates)?.len(),
+    };
     atomic_write(
         Path::new(".gitignore.in"),
         edit::render_with_line_ending(&script, line_ending),
     )?;
-    Ok(())
+    Ok(changed)
 }
 
 fn detect_gitignore_in_line_ending() -> std::io::Result<edit::LineEnding> {
