@@ -76,6 +76,18 @@ fn validate_gi_response(
     Ok(body)
 }
 
+fn parse_gi_list_body(body: &str) -> std::io::Result<Vec<String>> {
+    if body.is_empty() {
+        return Err(std::io::Error::other("Cached list body is empty"));
+    }
+    Ok(body
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
 fn validate_gi_list_response(
     status: StatusCode,
     body: String,
@@ -119,13 +131,20 @@ const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 
 pub fn gi_command(target: &str) -> std::io::Result<String> {
     let url = target_url(target)?;
+    let url_str = url.as_str();
+    let cached = crate::http_cache::get(url_str);
     let client = build_client()?;
+    let mut request = client.get(url.clone()).header("User-Agent", USER_AGENT);
+    if let Some(ref c) = cached {
+        if let Some(ref etag) = c.etag {
+            request = request.header("If-None-Match", etag.as_str());
+        }
+        if let Some(ref lm) = c.last_modified {
+            request = request.header("If-Modified-Since", lm.as_str());
+        }
+    }
     let started = std::time::Instant::now();
-    let response = match client
-        .get(url.clone())
-        .header("User-Agent", USER_AGENT)
-        .send()
-    {
+    let response = match request.send() {
         Ok(r) => r,
         Err(e) => {
             let kind = if e.is_timeout() {
@@ -150,15 +169,52 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         "HTTP GET {url} -> {status} ({:.0}ms)",
         started.elapsed().as_millis()
     );
+    if status == StatusCode::NOT_MODIFIED {
+        if let Some(entry) = cached {
+            return Ok(entry.body);
+        }
+        return Err(std::io::Error::other(format!(
+            "Got 304 Not Modified from {url} but no cached body"
+        )));
+    }
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let body = read_response_body_string(response, &format!("get {target} from {url}"))?;
-    validate_gi_response(status, body, target, &url)
+    let result = validate_gi_response(status, body, target, &url)?;
+    crate::http_cache::put(
+        url_str,
+        &crate::http_cache::CacheEntry {
+            etag,
+            last_modified,
+            body: result.clone(),
+        },
+    );
+    Ok(result)
 }
 
 pub fn gi_list() -> std::io::Result<Vec<String>> {
     let url = format!("{BASE_URL}list?format=lines");
+    let cached = crate::http_cache::get(&url);
     let client = build_client()?;
+    let mut request = client.get(&url).header("User-Agent", USER_AGENT);
+    if let Some(ref c) = cached {
+        if let Some(ref etag) = c.etag {
+            request = request.header("If-None-Match", etag.as_str());
+        }
+        if let Some(ref lm) = c.last_modified {
+            request = request.header("If-Modified-Since", lm.as_str());
+        }
+    }
     let started = std::time::Instant::now();
-    let response = match client.get(&url).header("User-Agent", USER_AGENT).send() {
+    let response = match request.send() {
         Ok(r) => r,
         Err(e) => {
             let kind = if e.is_timeout() {
@@ -183,8 +239,35 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
         "HTTP GET {url} -> {status} ({:.0}ms)",
         started.elapsed().as_millis()
     );
+    if status == StatusCode::NOT_MODIFIED {
+        if let Some(entry) = cached {
+            return parse_gi_list_body(&entry.body);
+        }
+        return Err(std::io::Error::other(format!(
+            "Got 304 Not Modified from {url} but no cached body"
+        )));
+    }
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let body = read_response_body_string(response, &format!("get list from {url}"))?;
-    validate_gi_list_response(status, body, &url)
+    let result = validate_gi_list_response(status, body.clone(), &url)?;
+    crate::http_cache::put(
+        &url,
+        &crate::http_cache::CacheEntry {
+            etag,
+            last_modified,
+            body,
+        },
+    );
+    Ok(result)
 }
 
 fn read_response_body_string(
