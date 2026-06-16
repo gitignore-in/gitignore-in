@@ -32,6 +32,12 @@ Show the CLI help:
 $ gitignore.in --help
 ```
 
+Show the CLI version:
+
+```bash
+$ gitignore.in --version
+```
+
 Generate `.gitignore.in` if needed and build `.gitignore`:
 
 ```bash
