@@ -218,7 +218,7 @@ fn search_templates(queries: Vec<String>) -> std::io::Result<()> {
         } else {
             format!("No templates matched: {}", queries.join(", "))
         };
-        return Err(std::io::Error::new(ErrorKind::InvalidInput, message));
+        return Err(std::io::Error::other(message));
     }
 
     for template in results {
