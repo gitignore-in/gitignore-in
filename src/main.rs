@@ -120,6 +120,8 @@ enum Commands {
     /// differ between runs if provider catalogs have been updated since the last
     /// run. For reproducible gibo results, set GITIGNORE_IN_BOILERPLATES_REF to a
     /// fixed commit SHA before running infer.
+    /// When only one of --gibo or --gi is provided, the other provider is not searched
+    /// (its candidate list is treated as empty).
     Infer {
         /// Comma-separated gibo targets to consider
         #[arg(long, value_delimiter = ',')]
