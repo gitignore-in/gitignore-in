@@ -108,6 +108,8 @@ enum Commands {
     /// Providing --gibo or --gi bypasses this shortcut and always runs full inference.
     /// When both --gibo and --gi are omitted and the shortcut does not apply, all
     /// templates from both providers are checked (may trigger many network requests).
+    /// When only one of --gibo or --gi is provided, the other provider is not searched
+    /// (its candidate list is treated as empty).
     Infer {
         /// Comma-separated gibo targets to consider
         #[arg(long, value_delimiter = ',')]
