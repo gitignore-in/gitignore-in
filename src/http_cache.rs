@@ -149,8 +149,7 @@ mod tests {
             body: "### Python ###\nfoo\n".to_owned(),
         };
         put_to_dir(tmp.path(), url, &entry);
-        let got =
-            get_from_dir(tmp.path(), url).expect("cache should have an entry after put");
+        let got = get_from_dir(tmp.path(), url).expect("cache should have an entry after put");
         assert_eq!(got.body, entry.body);
         assert!(got.etag.is_none());
         assert!(got.last_modified.is_none());
