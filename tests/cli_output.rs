@@ -56,3 +56,30 @@ fn invalid_user_input_goes_to_stderr_once() {
     );
     assert!(!stderr.contains("InvalidInput"));
 }
+
+#[test]
+fn search_no_match_exits_with_general_error_not_usage_error() {
+    let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+
+    let output = Command::new(binary())
+        .args(["search", "zzz-this-cannot-possibly-match-any-template"])
+        .current_dir(temp_dir.as_path())
+        .output()
+        .expect("failed to run gitignore-in");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "no-match search should exit 1 (general error), not 2 (usage error)"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "stdout should stay reserved for data output: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No templates matched"),
+        "stderr should explain the no-match result: {stderr}"
+    );
+}
