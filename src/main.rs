@@ -5,7 +5,7 @@ use std::{
     path::Path,
     process::ExitCode,
 };
-mod build;
+mod assembler;
 mod edit;
 mod format;
 mod gi;
@@ -228,7 +228,7 @@ fn build_gitignore() -> std::io::Result<()> {
         "parsed {} statements from .gitignore.in",
         statements.content.len()
     );
-    let result = build::build(statements)?;
+    let result = assembler::build(statements)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
     eprintln!("Generated .gitignore");
