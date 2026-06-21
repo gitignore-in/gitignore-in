@@ -206,7 +206,7 @@ plain-entry
     fn round_trips_empty_echo_via_build() {
         // build("echo ''\n") produces separator + empty line;
         // restore should recover "echo ''\n" from that output.
-        use crate::build::build;
+        use crate::assembler::build;
         use crate::parser::parse_text;
         let input = "echo ''\n";
         let script = parse_text(input);
