@@ -52,6 +52,27 @@ fn build_with_existing_gitignore_in_produces_gitignore() {
 }
 
 #[test]
+fn default_build_reads_boilerplates_ref_env() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = Command::new(BIN)
+        .env(
+            "GITIGNORE_IN_BOILERPLATES_REF",
+            "gitignore-in-test-missing-ref",
+        )
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Cannot resolve \"gitignore-in-test-missing-ref\""),
+        "stderr should show that the default build read the ref env var: {stderr}"
+    );
+    assert!(!tmp.path().join(".gitignore").exists());
+}
+
+#[test]
 fn build_rejects_multiple_template_names_on_one_line() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
