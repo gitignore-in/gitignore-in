@@ -107,8 +107,16 @@ fn run_command_with_timeout(
         .stderr(Stdio::piped())
         .process_group(0)
         .spawn()?;
-    let process_group_id = libc::pid_t::try_from(child.id())
-        .map_err(|_| std::io::Error::other(format!("{program} pid is out of range")))?;
+    let process_group_id = match libc::pid_t::try_from(child.id()) {
+        Ok(pid) => pid,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::other(format!(
+                "{program} pid is out of range"
+            )));
+        }
+    };
 
     let stdout = child
         .stdout
