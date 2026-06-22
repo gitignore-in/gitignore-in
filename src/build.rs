@@ -19,6 +19,11 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
+                // `c` already contains the leading `#` (e.g. `# my comment`).
+                // Prefixing `# ` produces `# # my comment` in the output
+                // .gitignore.  This double-hash is the encoding contract that
+                // restore() relies on to distinguish user comments from
+                // section headers (`# gibo dump …` / `# gi …`).
                 result.push_str(&format!("# {c}\n"));
             }
             GitIgnoreStatement::Meaningless(Meaningless::Content(m)) => {

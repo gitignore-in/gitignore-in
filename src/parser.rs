@@ -34,6 +34,11 @@ pub fn parse_line(text: &str) -> GitIgnoreStatement {
     if let Some(stripped) = text.strip_prefix("echo ") {
         return GitIgnoreStatement::Echo(Echo::Content(remove_shell_quote(stripped)));
     }
+    // Store the full line including the leading `#` so that build() can
+    // distinguish comments from section headers by prefixing `# ` again,
+    // producing the `# # comment` double-hash encoding in the output
+    // .gitignore.  restore() detects that `# #` prefix to recover the
+    // original comment line.
     if text.starts_with('#') {
         return GitIgnoreStatement::Comment(Comment::Content(text.to_string()));
     }
