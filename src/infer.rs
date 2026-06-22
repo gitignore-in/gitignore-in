@@ -7,6 +7,8 @@ use crate::{
     shell::{shell_quote, shell_word},
 };
 
+pub(crate) const DEFAULT_MIN_OVERLAP_PERCENT: u8 = 50;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Candidate {
     pub(crate) command: String,
@@ -24,6 +26,7 @@ pub(crate) struct InferOptions {
     pub(crate) gibo_targets: TemplateTargets,
     pub(crate) gi_targets: TemplateTargets,
     pub(crate) min_overlap: usize,
+    pub(crate) min_overlap_percent: u8,
 }
 
 impl Default for InferOptions {
@@ -32,6 +35,7 @@ impl Default for InferOptions {
             gibo_targets: TemplateTargets::All,
             gi_targets: TemplateTargets::All,
             min_overlap: 2,
+            min_overlap_percent: DEFAULT_MIN_OVERLAP_PERCENT,
         }
     }
 }
@@ -49,6 +53,7 @@ pub(crate) fn infer_with_options(text: &str, options: &InferOptions) -> std::io:
         text,
         &candidates,
         options.min_overlap,
+        options.min_overlap_percent,
     ))
 }
 
@@ -102,6 +107,7 @@ pub(crate) fn infer_from_candidates(
     text: &str,
     candidates: &[Candidate],
     min_overlap: usize,
+    min_overlap_percent: u8,
 ) -> String {
     let normalized_lines = collect_target_lines(text);
     let mut remaining: BTreeSet<String> = normalized_lines.iter().cloned().collect();
@@ -109,7 +115,7 @@ pub(crate) fn infer_from_candidates(
     let mut matched_counts = HashMap::new();
 
     while let Some((best_index, overlap)) =
-        choose_best_candidate(candidates, &remaining, min_overlap)
+        choose_best_candidate(candidates, &remaining, min_overlap, min_overlap_percent)
     {
         let candidate = &candidates[best_index];
         selected_commands.push(candidate.command.clone());
@@ -136,6 +142,7 @@ fn choose_best_candidate(
     candidates: &[Candidate],
     remaining: &BTreeSet<String>,
     min_overlap: usize,
+    min_overlap_percent: u8,
 ) -> Option<(usize, Vec<String>)> {
     let mut best: Option<(usize, Vec<String>, usize)> = None;
 
@@ -155,7 +162,7 @@ fn choose_best_candidate(
             continue;
         }
 
-        if overlap.len() * 2 < candidate.lines.len() {
+        if !meets_min_overlap_percent(overlap.len(), candidate.lines.len(), min_overlap_percent) {
             continue;
         }
 
@@ -174,6 +181,14 @@ fn choose_best_candidate(
     }
 
     best.map(|(index, overlap, _)| (index, overlap))
+}
+
+fn meets_min_overlap_percent(
+    overlap_len: usize,
+    candidate_line_count: usize,
+    min_overlap_percent: u8,
+) -> bool {
+    overlap_len * 100 >= candidate_line_count * usize::from(min_overlap_percent)
 }
 
 fn collect_target_lines(text: &str) -> Vec<String> {
@@ -248,6 +263,7 @@ mod tests {
 
         assert_eq!(options.gibo_targets, TemplateTargets::All);
         assert_eq!(options.gi_targets, TemplateTargets::All);
+        assert_eq!(options.min_overlap_percent, DEFAULT_MIN_OVERLAP_PERCENT);
     }
 
     #[test]
@@ -259,7 +275,7 @@ mod tests {
             candidate("gibo dump Logs", &["custom.log"]),
         ];
 
-        let inferred = infer_from_candidates(text, &candidates, 2);
+        let inferred = infer_from_candidates(text, &candidates, 2, DEFAULT_MIN_OVERLAP_PERCENT);
         let expected = "gibo dump Rust\ngi node\n\necho 'custom.log'\n";
         assert_eq!(inferred, expected);
     }
@@ -269,16 +285,34 @@ mod tests {
         let text = "# existing comment\nnode_modules/\ndist/\n# keep this too\ncustom.log\n";
         let candidates = vec![candidate("gi node", &["node_modules/", "dist/", ".env"])];
 
-        let inferred = infer_from_candidates(text, &candidates, 2);
+        let inferred = infer_from_candidates(text, &candidates, 2, DEFAULT_MIN_OVERLAP_PERCENT);
         let expected = "gi node\n\n# existing comment\n# keep this too\necho 'custom.log'\n";
         assert_eq!(inferred, expected);
+    }
+
+    #[test]
+    fn min_overlap_percent_controls_sparse_template_matches() {
+        let text = "node_modules/\ndist/\n";
+        let candidates = vec![candidate(
+            "gi node",
+            &["node_modules/", "dist/", ".env", "coverage/"],
+        )];
+
+        let inferred_at_half = infer_from_candidates(text, &candidates, 2, 50);
+        assert_eq!(inferred_at_half, "gi node\n");
+
+        let inferred_at_three_quarters = infer_from_candidates(text, &candidates, 2, 75);
+        assert_eq!(
+            inferred_at_three_quarters,
+            "echo 'node_modules/'\necho 'dist/'\n"
+        );
     }
 
     #[test]
     fn quotes_multiword_gibo_candidate_command() {
         let candidates = vec![candidate("gibo dump 'Visual Studio'", &["*.suo", "*.user"])];
         let text = "*.suo\n*.user\n";
-        let inferred = infer_from_candidates(text, &candidates, 2);
+        let inferred = infer_from_candidates(text, &candidates, 2, DEFAULT_MIN_OVERLAP_PERCENT);
         assert_eq!(inferred, "gibo dump 'Visual Studio'\n");
     }
 
@@ -286,14 +320,14 @@ mod tests {
     fn quotes_multiword_gi_candidate_command() {
         let candidates = vec![candidate("gi 'Visual Studio'", &["*.suo", "*.user"])];
         let text = "*.suo\n*.user\n";
-        let inferred = infer_from_candidates(text, &candidates, 2);
+        let inferred = infer_from_candidates(text, &candidates, 2, DEFAULT_MIN_OVERLAP_PERCENT);
         assert_eq!(inferred, "gi 'Visual Studio'\n");
     }
 
     #[test]
     fn falls_back_when_no_candidate_matches() {
         let text = "# comment\ncustom.log\n";
-        let inferred = infer_from_candidates(text, &[], 2);
+        let inferred = infer_from_candidates(text, &[], 2, DEFAULT_MIN_OVERLAP_PERCENT);
         assert_eq!(inferred, "# comment\necho 'custom.log'\n");
     }
 
@@ -330,6 +364,7 @@ mod tests {
                 gibo_targets: TemplateTargets::Explicit(vec![]),
                 gi_targets: TemplateTargets::Explicit(vec![]),
                 min_overlap: 99,
+                min_overlap_percent: DEFAULT_MIN_OVERLAP_PERCENT,
             },
         )
         .unwrap();
@@ -351,7 +386,7 @@ mod tests {
             # Edit .gitignore.in instead of this file\n\
             # Run `gitignore.in` to build .gitignore\n\
             target/\n";
-        let infer_result = infer_from_candidates(generated, &[], 2);
+        let infer_result = infer_from_candidates(generated, &[], 2, DEFAULT_MIN_OVERLAP_PERCENT);
         let restore_result = restore::restore(generated);
         assert_ne!(infer_result, restore_result);
     }
