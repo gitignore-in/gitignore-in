@@ -329,10 +329,7 @@ mod tests {
         // removes the ESC byte, leaving the non-control remnant "[32m...[0m" harmless
         // (no ESC prefix → no terminal interpretation).
         let raw = "\x1b[32m/home/user/boilerplates\x1b[0m";
-        assert_eq!(
-            strip_control_chars(raw),
-            "[32m/home/user/boilerplates[0m"
-        );
+        assert_eq!(strip_control_chars(raw), "[32m/home/user/boilerplates[0m");
     }
 
     #[test]
