@@ -25,6 +25,12 @@ fn sanitize_error_body(body: &str) -> String {
         .collect()
 }
 
+fn sanitize_body(body: &str) -> String {
+    body.chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t'))
+        .collect()
+}
+
 fn target_url(target: &str) -> std::io::Result<Url> {
     let mut url = Url::parse(BASE_URL)
         .map_err(|e| std::io::Error::other(format!("Invalid BASE_URL `{BASE_URL}`: {e}")))?;
@@ -73,7 +79,7 @@ fn validate_gi_response(
             sanitize_error_body(&body)
         )));
     }
-    Ok(body)
+    Ok(sanitize_body(&body))
 }
 
 fn validate_gi_list_response(
@@ -324,6 +330,32 @@ mod tests {
         let err = validate_gi_response(StatusCode::OK, body, "foo", &dummy_url()).unwrap_err();
         assert!(err.to_string().contains("ERROR"));
         assert!(err.to_string().contains("is undefined"));
+    }
+
+    #[test]
+    fn test_sanitize_body_strips_non_whitespace_control_chars() {
+        // ESC (0x1b) and NUL (0x00) are removed; \n and \t are preserved.
+        let body = "\x00### template ###\n\x1b[32mfoo\x1b[0m\n\tindented\n";
+        assert_eq!(
+            sanitize_body(body),
+            "### template ###\n[32mfoo[0m\n\tindented\n"
+        );
+    }
+
+    #[test]
+    fn test_validate_gi_response_success_body_has_control_chars_stripped() {
+        // A 200 response body containing ANSI escapes must have those stripped
+        // before the content is returned to callers.
+        let body = "### X ###\n\x1b[32mfoo\x1b[0m\nbar\n".to_string();
+        let result = validate_gi_response(StatusCode::OK, body, "X", &dummy_url()).unwrap();
+        assert!(!result
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')));
+        assert!(
+            result.contains("foo"),
+            "printable content must be preserved"
+        );
+        assert!(result.contains("bar"));
     }
 
     #[test]
