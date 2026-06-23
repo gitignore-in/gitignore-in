@@ -17,10 +17,13 @@ mod script;
 
 const AFTER_HELP: &str =
     "Official site: https://gitignore.in/\nRepository: https://github.com/gitignore-in/gitignore-in";
-const GITIGNORE_IN_HEADER_LINES: [&str; 2] = [
+const GITIGNORE_IN_HEADER_LINES: [&str; 3] = [
     "# See https://gitignore.in/",
+    "# gitignore.in format: v1",
     "# Edit this file and run `gitignore.in` to rebuild .gitignore",
 ];
+// Stable public env-var API: callers in CI may rely on this across tool versions.
+const GITIGNORE_IN_BOILERPLATES_REF_ENV: &str = "GITIGNORE_IN_BOILERPLATES_REF";
 const EXIT_GENERAL_ERROR: u8 = 1;
 const EXIT_USAGE_ERROR: u8 = 2;
 const EXIT_PERMISSION_DENIED: u8 = 13;
@@ -122,7 +125,7 @@ enum Commands {
 }
 
 fn pin_boilerplates_if_requested() -> std::io::Result<()> {
-    if let Ok(ref_spec) = std::env::var("GITIGNORE_IN_BOILERPLATES_REF") {
+    if let Ok(ref_spec) = std::env::var(GITIGNORE_IN_BOILERPLATES_REF_ENV) {
         if !ref_spec.is_empty() {
             gibo::pin_boilerplates(&ref_spec)?;
         }
@@ -389,10 +392,8 @@ fn gitignore_in_template_header() -> String {
 }
 
 fn add_gitignore_in_header(content: &str) -> String {
-    if GITIGNORE_IN_HEADER_LINES
-        .iter()
-        .all(|line| content.contains(line))
-    {
+    // Check only the primary identity marker; older files may lack the version line.
+    if content.contains(GITIGNORE_IN_HEADER_LINES[0]) {
         return content.to_string();
     }
 
@@ -440,6 +441,15 @@ mod tests {
     }
 
     #[test]
+    fn gitignore_in_header_contains_format_version() {
+        let header = gitignore_in_template_header();
+        assert!(
+            header.contains("# gitignore.in format: v1"),
+            "header must include a format version marker"
+        );
+    }
+
+    #[test]
     fn test_main() {
         let temp_dir = Temp::new_dir().expect("failed to create temp dir");
         let _guard = CwdGuard::new(temp_dir.as_path());
@@ -450,6 +460,7 @@ mod tests {
         assert!(path.exists());
         let content = std::fs::read_to_string(path).expect("failed to read .gitignore.in");
         assert!(content.contains("# See https://gitignore.in/"));
+        assert!(content.contains("# gitignore.in format: v1"));
 
         // try again
         let result = run(Cli { command: None });
@@ -474,7 +485,7 @@ mod tests {
             std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
         assert_eq!(
             restored,
-            "# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n\necho 'plain-entry'\necho '!important.txt'\n"
+            "# See https://gitignore.in/\n# gitignore.in format: v1\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n\necho 'plain-entry'\necho '!important.txt'\n"
         );
     }
 
