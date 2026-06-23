@@ -159,9 +159,9 @@ fn run(cli: Cli) -> std::io::Result<()> {
         }) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
-            infer_gitignore_in_file(gibo, gi, min_overlap)?;
+            let seed = infer_gitignore_in_file(gibo, gi, min_overlap)?;
             eprintln!("Inferred .gitignore.in");
-            build_gitignore()
+            build_gitignore_with_seed(seed)
         }
         None => build_gitignore(),
     }
@@ -173,6 +173,10 @@ enum UpdateMode {
 }
 
 fn build_gitignore() -> std::io::Result<()> {
+    build_gitignore_with_seed(build::TemplateCache::default())
+}
+
+fn build_gitignore_with_seed(seed: build::TemplateCache) -> std::io::Result<()> {
     let started = std::time::Instant::now();
     match bootstrap_gitignore_in_file() {
         Ok(BootstrapStatus::AlreadyPresent) => {
@@ -198,12 +202,12 @@ fn build_gitignore() -> std::io::Result<()> {
         "parsed {} statements from .gitignore.in",
         statements.content.len()
     );
-    let result = build::build(statements)?;
+    let result = build::build(statements, seed)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
     eprintln!("Generated .gitignore");
     debug!(
-        "build_gitignore complete ({:.0}ms)",
+        "build_gitignore_with_seed complete ({:.0}ms)",
         started.elapsed().as_millis()
     );
     Ok(())
@@ -287,7 +291,7 @@ fn infer_gitignore_in_file(
     gibo_targets: Vec<String>,
     gi_targets: Vec<String>,
     min_overlap: usize,
-) -> std::io::Result<()> {
+) -> std::io::Result<build::TemplateCache> {
     let path = std::path::Path::new(".gitignore");
     let file = std::fs::File::open(path)?;
     let mut content = String::new();
@@ -300,7 +304,7 @@ fn infer_gitignore_in_file(
     }
 
     let (gibo_targets, gi_targets) = infer_target_selection(gibo_targets, gi_targets);
-    let inferred = infer::infer_with_options(
+    let (inferred, cache) = infer::infer_with_cache(
         &content,
         &infer::InferOptions {
             gibo_targets,
@@ -312,7 +316,7 @@ fn infer_gitignore_in_file(
         Path::new(".gitignore.in"),
         add_gitignore_in_header(&inferred),
     )?;
-    Ok(())
+    Ok(cache)
 }
 
 fn infer_target_selection(

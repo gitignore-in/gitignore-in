@@ -7,15 +7,25 @@ use crate::{
     script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Invalid, Meaningless},
 };
 
-pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
+/// Pre-fetched template content that can be reused across phases.
+///
+/// Populated by the `infer` phase and passed to `build` to avoid fetching the
+/// same templates twice when both phases run in sequence (e.g. `gitignore.in
+/// infer`).
+#[derive(Debug, Default)]
+pub(crate) struct TemplateCache {
+    pub gibo: std::collections::HashMap<String, String>,
+    pub gi: std::collections::HashMap<String, String>,
+}
+
+pub(crate) fn build(script: GitIgnoreIn, seed: TemplateCache) -> std::io::Result<String> {
     let mut result = String::new();
     for line in GENERATED_HEADER_LINES {
         result.push_str(line);
         result.push('\n');
     }
-    let mut gibo_cache: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    let mut gi_cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut gibo_cache = seed.gibo;
+    let mut gi_cache = seed.gi;
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
@@ -90,7 +100,7 @@ gi C++
 echo hello
 "#;
         let result = parse_text(text);
-        let result = build(result).unwrap();
+        let result = build(result, Default::default()).unwrap();
         assert!(result.contains("# gi C++"));
         assert!(result.contains("# Created by https://www.toptal.com/developers/gitignore/api/C++"));
         assert!(
@@ -112,7 +122,7 @@ echo hello
                 GitIgnoreStatement::Echo(Echo::Content("hello".to_string())),
             ],
         };
-        let result = build(script).unwrap();
+        let result = build(script, Default::default()).unwrap();
         // The empty Meaningless line becomes a newline in the output.
         assert!(result.contains("\n\n"));
     }
@@ -124,16 +134,13 @@ echo hello
                 "function foo() {}".to_string(),
             ))],
         };
-        let result = build(script).unwrap();
+        let result = build(script, Default::default()).unwrap();
         assert!(!result.contains("function foo()"));
     }
 
     #[test]
     fn generated_header_includes_official_site() {
-        let result = build(GitIgnoreIn {
-            content: Vec::new(),
-        })
-        .unwrap();
+        let result = build(GitIgnoreIn { content: Vec::new() }, Default::default()).unwrap();
         assert!(result.contains("# See https://gitignore.in/"));
     }
 
@@ -143,7 +150,7 @@ echo hello
         // producing identical content for each occurrence (cache hit on second call).
         let text = "gi C++\ngi C++\n";
         let script = parse_text(text);
-        let result = build(script).unwrap();
+        let result = build(script, Default::default()).unwrap();
         assert_eq!(result.matches("# gi C++").count(), 2);
     }
 
@@ -151,7 +158,7 @@ echo hello
     fn test_repeated_gibo_target_dedup() {
         let text = "gibo dump C++\ngibo dump C++\n";
         let script = parse_text(text);
-        let result = build(script).unwrap();
+        let result = build(script, Default::default()).unwrap();
         assert_eq!(result.matches("# gibo dump C++").count(), 2);
     }
 
@@ -159,7 +166,7 @@ echo hello
     fn test_echo_with_gibo_prefix_is_rejected() {
         let text = "echo '# gibo dump Rust'\n";
         let script = parse_text(text);
-        let err = build(script).unwrap_err();
+        let err = build(script, Default::default()).unwrap_err();
         assert!(err.to_string().contains("reserved section header prefix"));
     }
 
@@ -167,7 +174,7 @@ echo hello
     fn test_echo_with_gi_prefix_is_rejected() {
         let text = "echo '# gi Rust'\n";
         let script = parse_text(text);
-        let err = build(script).unwrap_err();
+        let err = build(script, Default::default()).unwrap_err();
         assert!(err.to_string().contains("reserved section header prefix"));
     }
 
@@ -175,7 +182,7 @@ echo hello
     fn test_multi_template_gibo_line_is_rejected() {
         let text = "gibo dump Rust macOS\n";
         let script = parse_text(text);
-        let err = build(script).unwrap_err();
+        let err = build(script, Default::default()).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("one template per line"));
     }
@@ -184,7 +191,7 @@ echo hello
     fn test_multi_template_gi_line_is_rejected() {
         let text = "gi Rust macOS\n";
         let script = parse_text(text);
-        let err = build(script).unwrap_err();
+        let err = build(script, Default::default()).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("one template per line"));
     }
