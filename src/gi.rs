@@ -89,12 +89,6 @@ fn validate_gi_response(
             ),
         ));
     }
-    if body.len() > MAX_RESPONSE_BYTES {
-        return Err(std::io::Error::other(format!(
-            "Failed to get {target} from {url}: response body too large ({} bytes, max {MAX_RESPONSE_SIZE_DISPLAY} / {MAX_RESPONSE_BYTES} bytes)",
-            body.len()
-        )));
-    }
     if body.is_empty() {
         return Err(std::io::Error::other(format!(
             "Failed to get {target} from {url}: empty response body"
@@ -143,12 +137,6 @@ fn validate_gi_list_response(
                 body.len()
             ),
         ));
-    }
-    if body.len() > MAX_RESPONSE_BYTES {
-        return Err(std::io::Error::other(format!(
-            "Failed to get list from {url}: response body too large ({} bytes, max {MAX_RESPONSE_SIZE_DISPLAY} / {MAX_RESPONSE_BYTES} bytes)",
-            body.len()
-        )));
     }
     if body.is_empty() {
         return Err(std::io::Error::other(format!(
@@ -587,21 +575,6 @@ mod tests {
             validate_gi_list_response(StatusCode::OK, String::new(), "https://example.test/list")
                 .unwrap_err();
         assert!(err.to_string().contains("empty response body"));
-    }
-
-    #[test]
-    fn test_validate_gi_response_rejects_oversized_body() {
-        let body = "x".repeat(MAX_RESPONSE_BYTES + 1);
-        let err = validate_gi_response(StatusCode::OK, body, "X", &dummy_url()).unwrap_err();
-        assert!(err.to_string().contains("too large"));
-    }
-
-    #[test]
-    fn test_validate_gi_list_response_rejects_oversized_body() {
-        let body = "x".repeat(MAX_RESPONSE_BYTES + 1);
-        let err = validate_gi_list_response(StatusCode::OK, body, "https://example.test/list")
-            .unwrap_err();
-        assert!(err.to_string().contains("too large"));
     }
 
     #[test]
