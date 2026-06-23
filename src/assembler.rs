@@ -7,23 +7,26 @@ use crate::{
     script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Invalid, Meaningless},
 };
 
-pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
-    build_with(script, gibo_command, gi_command)
+/// Pre-fetched template content that can be reused across phases.
+#[derive(Debug, Default)]
+pub(crate) struct TemplateCache {
+    pub gibo: std::collections::HashMap<String, String>,
+    pub gi: std::collections::HashMap<String, String>,
 }
 
 fn build_with(
     script: GitIgnoreIn,
     load_gibo: impl Fn(&str) -> std::io::Result<String>,
     load_gi: impl Fn(&str) -> std::io::Result<String>,
+    seed: TemplateCache,
 ) -> std::io::Result<String> {
     let mut result = String::new();
     for line in GENERATED_HEADER_LINES {
         result.push_str(line);
         result.push('\n');
     }
-    let mut gibo_cache: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    let mut gi_cache: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut gibo_cache = seed.gibo;
+    let mut gi_cache = seed.gi;
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
@@ -87,6 +90,14 @@ fn build_with(
         }
     }
     Ok(result)
+}
+
+pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
+    build_with(script, gibo_command, gi_command, Default::default())
+}
+
+pub(crate) fn build_with_seed(script: GitIgnoreIn, seed: TemplateCache) -> std::io::Result<String> {
+    build_with(script, gibo_command, gi_command, seed)
 }
 
 fn push_external_content(result: &mut String, content: &str) {
@@ -169,10 +180,7 @@ echo hello
 
     #[test]
     fn generated_header_includes_official_site() {
-        let result = build(GitIgnoreIn {
-            content: Vec::new(),
-        })
-        .unwrap();
+        let result = build(GitIgnoreIn { content: Vec::new() }).unwrap();
         assert!(result.contains("# See https://gitignore.in/"));
     }
 
@@ -186,6 +194,7 @@ echo hello
             script,
             |_| Err(std::io::Error::other("no gibo")),
             |target| Ok(format!("# {target} content\n")),
+            Default::default(),
         )
         .unwrap();
         assert_eq!(result.matches("# gi Rust").count(), 2);
@@ -201,6 +210,7 @@ echo hello
             script,
             |target| Ok(format!("# {target} content\n")),
             |_| Err(std::io::Error::other("no gi")),
+            Default::default(),
         )
         .unwrap();
         assert_eq!(result.matches("# gibo dump Rust").count(), 2);
@@ -214,6 +224,7 @@ echo hello
             script,
             |_| Err(std::io::Error::other("gibo unavailable")),
             |_| Ok(String::new()),
+            Default::default(),
         )
         .unwrap_err();
         assert!(err.to_string().contains("gibo unavailable"));
@@ -227,6 +238,7 @@ echo hello
             script,
             |_| Ok(String::new()),
             |_| Err(std::io::Error::other("gi unavailable")),
+            Default::default(),
         )
         .unwrap_err();
         assert!(err.to_string().contains("gi unavailable"));
