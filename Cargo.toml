@@ -22,4 +22,3 @@ tempfile = "3"
 url = "2.5"
 
 [dev-dependencies]
-mktemp = "0.5.1"
