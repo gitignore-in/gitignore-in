@@ -7,6 +7,7 @@ use url::Url;
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
+const MAX_RESPONSE_SIZE_DISPLAY: &str = "10 MiB";
 
 fn build_client() -> std::io::Result<Client> {
     Client::builder()
@@ -58,7 +59,7 @@ fn validate_gi_response(
     }
     if body.len() > MAX_RESPONSE_BYTES {
         return Err(std::io::Error::other(format!(
-            "Failed to get {target} from {url}: response body too large ({} bytes, max {MAX_RESPONSE_BYTES})",
+            "Failed to get {target} from {url}: response body too large ({} bytes, max {MAX_RESPONSE_SIZE_DISPLAY} / {MAX_RESPONSE_BYTES} bytes)",
             body.len()
         )));
     }
@@ -98,7 +99,7 @@ fn validate_gi_list_response(
     }
     if body.len() > MAX_RESPONSE_BYTES {
         return Err(std::io::Error::other(format!(
-            "Failed to get list from {url}: response body too large ({} bytes, max {MAX_RESPONSE_BYTES})",
+            "Failed to get list from {url}: response body too large ({} bytes, max {MAX_RESPONSE_SIZE_DISPLAY} / {MAX_RESPONSE_BYTES} bytes)",
             body.len()
         )));
     }
@@ -198,7 +199,7 @@ fn read_response_body_string(
     }
     if buf.len() as u64 >= limit {
         return Err(std::io::Error::other(format!(
-            "Failed to {context}: response body too large (> {MAX_RESPONSE_BYTES} bytes)"
+            "Failed to {context}: response body too large (> {MAX_RESPONSE_SIZE_DISPLAY} / {MAX_RESPONSE_BYTES} bytes)"
         )));
     }
     String::from_utf8(buf).map_err(|e| std::io::Error::other(format!("Failed to {context}: {e}")))
