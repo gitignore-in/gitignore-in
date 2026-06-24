@@ -32,7 +32,13 @@ pub fn parse_line(text: &str) -> GitIgnoreStatement {
         };
     }
     if let Some(stripped) = text.strip_prefix("echo ") {
-        return GitIgnoreStatement::Echo(Echo::Content(remove_shell_quote(stripped)));
+        let Some(parts) = shlex::split(stripped) else {
+            return GitIgnoreStatement::Invalid(Invalid::Line {
+                content: text.to_string(),
+                reason: format!("echo has invalid shell quoting: {stripped:?}"),
+            });
+        };
+        return GitIgnoreStatement::Echo(Echo::Content(parts.join(" ")));
     }
     if text.starts_with('#') {
         return GitIgnoreStatement::Comment(Comment::Content(text.to_string()));
@@ -54,14 +60,6 @@ fn parse_template_target(command: &str, text: &str) -> Result<String, String> {
             parts.join(", ")
         )),
     }
-}
-
-fn remove_shell_quote(text: &str) -> String {
-    let split = shlex::split(text);
-    if let Some(sp) = split {
-        return sp.join(" ");
-    }
-    text.to_string()
 }
 
 #[cfg(test)]
@@ -95,6 +93,17 @@ echo '!.gitignore'
             ],
         };
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn echo_with_invalid_quoting_returns_invalid() {
+        assert_eq!(
+            parse_line("echo it's"),
+            GitIgnoreStatement::Invalid(Invalid::Line {
+                content: "echo it's".to_string(),
+                reason: r#"echo has invalid shell quoting: "it's""#.to_string(),
+            })
+        );
     }
 
     #[test]
