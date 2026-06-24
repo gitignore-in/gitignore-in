@@ -67,7 +67,10 @@ fn validate_gi_response(
             "Failed to get {target} from {url}: empty response body"
         )));
     }
-    if body.contains("ERROR") && body.contains("is undefined") {
+    if body
+        .lines()
+        .any(|line| line.contains("ERROR") && line.contains(&format!("{target} is undefined")))
+    {
         return Err(std::io::Error::other(format!(
             "Failed to get {target} from {url}: {}",
             sanitize_error_body(&body)
@@ -324,6 +327,18 @@ mod tests {
         let err = validate_gi_response(StatusCode::OK, body, "foo", &dummy_url()).unwrap_err();
         assert!(err.to_string().contains("ERROR"));
         assert!(err.to_string().contains("is undefined"));
+    }
+
+    #[test]
+    fn test_validate_gi_response_does_not_reject_independent_error_keywords() {
+        // "ERROR" and "is undefined" appearing in unrelated parts of a valid template
+        // body must not trigger the legacy error detector.
+        let body = "# ERROR handling notes\n# Check if value is undefined before use".to_string();
+        let result = validate_gi_response(StatusCode::OK, body, "rust", &dummy_url());
+        assert!(
+            result.is_ok(),
+            "unrelated occurrences of ERROR and 'is undefined' must not cause false positive"
+        );
     }
 
     #[test]
