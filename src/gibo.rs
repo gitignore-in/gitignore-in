@@ -199,12 +199,6 @@ fn validate_gibo_command_output(
                 truncate_stderr(stderr)
             )));
         }
-        if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
-            return Err(std::io::Error::other(format!(
-                "Failed to get {target} from gibo: output too large ({} bytes, max {MAX_SUBPROCESS_OUTPUT_BYTES})",
-                stdout.len()
-            )));
-        }
         return Ok(stdout);
     }
     let code = status
@@ -230,12 +224,6 @@ fn validate_gibo_list_output(
         return Err(std::io::Error::other(format!(
             "Failed to list templates from gibo: exit={code} stderr={}",
             truncate_stderr(stderr)
-        )));
-    }
-    if stdout.len() > MAX_SUBPROCESS_OUTPUT_BYTES {
-        return Err(std::io::Error::other(format!(
-            "Failed to list templates from gibo: output too large ({} bytes, max {MAX_SUBPROCESS_OUTPUT_BYTES})",
-            stdout.len()
         )));
     }
     Ok(stdout
@@ -400,20 +388,6 @@ mod tests {
         let err = validate_gibo_command_output(make_status(1), String::new(), &long_stderr, "C++")
             .unwrap_err();
         assert!(err.to_string().contains("truncated"));
-    }
-
-    #[test]
-    fn test_validate_gibo_command_output_rejects_oversized_stdout() {
-        let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
-        let err = validate_gibo_command_output(make_status(0), stdout, "", "C++").unwrap_err();
-        assert!(err.to_string().contains("too large"));
-    }
-
-    #[test]
-    fn test_validate_gibo_list_output_rejects_oversized_stdout() {
-        let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
-        let err = validate_gibo_list_output(make_status(0), stdout, "").unwrap_err();
-        assert!(err.to_string().contains("too large"));
     }
 
     #[test]
