@@ -3,19 +3,21 @@ use std::process::Command;
 const BIN: &str = env!("CARGO_BIN_EXE_gitignore-in");
 
 #[test]
-fn help_flag_exits_successfully() {
+fn help_output_matches_snapshot() {
     let output = Command::new(BIN).arg("--help").output().unwrap();
     assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Manage .gitignore files"));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    insta::assert_snapshot!(stdout);
 }
 
 #[test]
-fn version_flag_exits_successfully() {
+fn version_output_format_matches_snapshot() {
     let output = Command::new(BIN).arg("--version").output().unwrap();
     assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("gitignore.in"));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    // Normalize the version number so the snapshot stays valid across releases.
+    let normalized = stdout.replace(env!("CARGO_PKG_VERSION"), "<VERSION>");
+    insta::assert_snapshot!(normalized);
 }
 
 #[test]
