@@ -43,6 +43,15 @@ jobs:
           fi
           echo "next_version=${next_version}" >> "${GITHUB_OUTPUT}"
 
+      - name: Require next development PR token
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [ -z "${RELEASE_PAT}" ]; then
+            echo "RELEASE_PAT secret is required so the created PR triggers pull_request workflows." >&2
+            exit 1
+          fi
+
       - name: Set next development version
         run: |
           perl -0pi -e 's/^version = ".*"$/version = "'"${{ steps.version.outputs.next_version }}"'"/m' Cargo.toml
@@ -50,6 +59,7 @@ jobs:
       - name: Create next development pull request
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
+          token: ${{ secrets.RELEASE_PAT }}
           branch: chore/next-development-version
           delete-branch: true
           commit-message: Bump to ${{ steps.version.outputs.next_version }}
