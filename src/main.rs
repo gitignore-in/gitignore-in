@@ -10,6 +10,7 @@ mod edit;
 mod format;
 mod gi;
 mod gibo;
+pub mod http_cache;
 mod infer;
 mod parser;
 mod restore;
