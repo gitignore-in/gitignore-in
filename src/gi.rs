@@ -1,6 +1,7 @@
 use log::debug;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use std::io::ErrorKind;
 use std::io::Read;
 use std::time::Duration;
 use url::Url;
@@ -12,7 +13,10 @@ fn build_client() -> std::io::Result<Client> {
     Client::builder()
         .timeout(HTTP_TIMEOUT)
         .build()
-        .map_err(|e| std::io::Error::other(format!("Failed to build HTTP client: {e}")))
+        .map_err(|e| {
+            let (_, reason) = classify_reqwest_error(&e);
+            std::io::Error::other(format!("Failed to build HTTP client: {reason}"))
+        })
 }
 
 const BASE_URL: &str = "https://www.toptal.com/developers/gitignore/api/";
@@ -23,6 +27,23 @@ fn sanitize_error_body(body: &str) -> String {
         .filter(|c| !c.is_control())
         .take(MAX_ERROR_BODY_CHARS)
         .collect()
+}
+
+fn classify_reqwest_error(e: &reqwest::Error) -> (ErrorKind, &'static str) {
+    if e.is_timeout() {
+        (ErrorKind::TimedOut, "request timed out")
+    } else if e.is_connect() {
+        (ErrorKind::NotConnected, "connection failed")
+    } else if e.is_builder() {
+        (ErrorKind::InvalidInput, "request could not be built")
+    } else {
+        (ErrorKind::Other, "request failed")
+    }
+}
+
+fn request_error(url: &str, e: &reqwest::Error) -> std::io::Error {
+    let (kind, reason) = classify_reqwest_error(e);
+    std::io::Error::new(kind, format!("Failed to request to {url}: {reason}"))
 }
 
 fn target_url(target: &str) -> std::io::Result<Url> {
@@ -128,21 +149,12 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
     {
         Ok(r) => r,
         Err(e) => {
-            let kind = if e.is_timeout() {
-                std::io::ErrorKind::TimedOut
-            } else if e.is_connect() {
-                std::io::ErrorKind::NotConnected
-            } else {
-                std::io::ErrorKind::Other
-            };
+            let (_, reason) = classify_reqwest_error(&e);
             debug!(
-                "HTTP GET {url} -> error ({:.0}ms): {e}",
+                "HTTP GET {url} -> error ({:.0}ms): {reason}",
                 started.elapsed().as_millis()
             );
-            return Err(std::io::Error::new(
-                kind,
-                format!("Failed to request to {url}: {e}"),
-            ));
+            return Err(request_error(url.as_str(), &e));
         }
     };
     let status = response.status();
@@ -161,21 +173,12 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
     let response = match client.get(&url).header("User-Agent", USER_AGENT).send() {
         Ok(r) => r,
         Err(e) => {
-            let kind = if e.is_timeout() {
-                std::io::ErrorKind::TimedOut
-            } else if e.is_connect() {
-                std::io::ErrorKind::NotConnected
-            } else {
-                std::io::ErrorKind::Other
-            };
+            let (_, reason) = classify_reqwest_error(&e);
             debug!(
-                "HTTP GET {url} -> error ({:.0}ms): {e}",
+                "HTTP GET {url} -> error ({:.0}ms): {reason}",
                 started.elapsed().as_millis()
             );
-            return Err(std::io::Error::new(
-                kind,
-                format!("Failed to request to {url}: {e}"),
-            ));
+            return Err(request_error(&url, &e));
         }
     };
     let status = response.status();
@@ -340,6 +343,21 @@ mod tests {
         let long = "A".repeat(MAX_ERROR_BODY_CHARS + 50);
         let result = sanitize_error_body(&long);
         assert_eq!(result.chars().count(), MAX_ERROR_BODY_CHARS);
+    }
+
+    #[test]
+    fn test_request_error_omits_reqwest_error_display() {
+        let err = Client::new()
+            .get("http://user:password@")
+            .send()
+            .expect_err("invalid URL should fail before making a request");
+        let safe = request_error("https://example.test/api/Rust", &err);
+        let msg = safe.to_string();
+
+        assert!(msg.contains("https://example.test/api/Rust"));
+        assert!(!msg.contains("user:password"));
+        assert!(!msg.contains("http://user"));
+        assert!(!msg.contains(&err.to_string()));
     }
 
     #[test]
