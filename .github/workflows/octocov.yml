@@ -48,7 +48,7 @@ jobs:
 
       - name: coverage
         run: |
-          cargo install cargo-llvm-cov || true  # when already cached
+          command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install --locked cargo-llvm-cov
           cargo llvm-cov --lcov --output-path coverage.lcov
 
       # See also: https://github.com/k1LoW/octocov-action
