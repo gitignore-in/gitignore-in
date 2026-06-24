@@ -238,12 +238,18 @@ fn validate_gibo_list_output(
             stdout.len()
         )));
     }
-    Ok(stdout
+    let templates: Vec<String> = stdout
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(ToString::to_string)
-        .collect())
+        .collect();
+    if templates.is_empty() {
+        return Err(std::io::Error::other(
+            "Failed to list templates from gibo: empty output (boilerplate DB may be uninitialized; run `gibo update`)",
+        ));
+    }
+    Ok(templates)
 }
 
 pub fn gibo_command(target: &str) -> std::io::Result<String> {
@@ -375,6 +381,21 @@ mod tests {
             validate_gibo_list_output(make_status(127), String::new(), "gibo: command failed")
                 .unwrap_err();
         assert!(err.to_string().contains("exit=127"));
+    }
+
+    #[test]
+    fn test_validate_gibo_list_output_rejects_empty_output() {
+        // exit 0 but no templates: uninitialized or corrupted boilerplate DB
+        let err = validate_gibo_list_output(make_status(0), String::new(), "").unwrap_err();
+        assert!(err.to_string().contains("empty output"));
+    }
+
+    #[test]
+    fn test_validate_gibo_list_output_rejects_whitespace_only_output() {
+        // exit 0 but only whitespace: should also be treated as empty
+        let err =
+            validate_gibo_list_output(make_status(0), "   \n\n  \n".to_string(), "").unwrap_err();
+        assert!(err.to_string().contains("empty output"));
     }
 
     #[test]
