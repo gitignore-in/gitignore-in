@@ -27,6 +27,15 @@ jobs:
           - gitignore-in/homebrew-gitignore-in
           - gitignore-in/gh-action
     steps:
+      - name: Require downstream release token
+        env:
+          DOWNSTREAM_RELEASE_PAT: ${{ secrets.DOWNSTREAM_RELEASE_PAT }}
+        run: |
+          if [ -z "${DOWNSTREAM_RELEASE_PAT}" ]; then
+            echo "DOWNSTREAM_RELEASE_PAT secret is required to dispatch downstream release workflows." >&2
+            exit 1
+          fi
+
       - name: Resolve released version
         id: version
         env:
