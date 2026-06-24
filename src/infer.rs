@@ -4,6 +4,7 @@ use crate::{
     gi::{gi_command, gi_list},
     gibo::{gibo_command, gibo_list},
     restore,
+    shell::{shell_quote, shell_word},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,7 +65,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     for target in &gibo_targets {
         let content = gibo_command(target)?;
         candidates.push(Candidate {
-            command: format!("gibo dump {}", shell_quote_target(target)),
+            command: format!("gibo dump {}", shell_word(target)),
             lines: normalize_content(&content),
         });
     }
@@ -72,7 +73,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     for target in &gi_targets {
         let content = gi_command(target)?;
         candidates.push(Candidate {
-            command: format!("gi {}", shell_quote_target(target)),
+            command: format!("gi {}", shell_word(target)),
             lines: normalize_content(&content),
         });
     }
@@ -208,18 +209,6 @@ fn residual_lines(text: &str, matched_counts: &mut HashMap<String, usize>) -> Ve
     }
 
     result
-}
-
-fn shell_quote_target(text: &str) -> String {
-    if text.contains(|c: char| c.is_whitespace() || c == '\'') {
-        shell_quote(text)
-    } else {
-        text.to_string()
-    }
-}
-
-fn shell_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r#"'\''"#))
 }
 
 #[cfg(test)]
