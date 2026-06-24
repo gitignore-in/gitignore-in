@@ -95,10 +95,6 @@ pub(crate) fn infer_from_candidates(
         choose_best_candidate(candidates, &remaining, min_overlap)
     {
         let candidate = &candidates[best_index];
-        if overlap.is_empty() {
-            break;
-        }
-
         selected_commands.push(candidate.command.clone());
         for line in overlap {
             remaining.remove(&line);
