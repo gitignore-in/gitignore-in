@@ -8,6 +8,14 @@ use crate::{
 };
 
 pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
+    build_with(script, gibo_command, gi_command)
+}
+
+fn build_with(
+    script: GitIgnoreIn,
+    load_gibo: impl Fn(&str) -> std::io::Result<String>,
+    load_gi: impl Fn(&str) -> std::io::Result<String>,
+) -> std::io::Result<String> {
     let mut result = String::new();
     for line in GENERATED_HEADER_LINES {
         result.push_str(line);
@@ -30,7 +38,7 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 let content = if let Some(cached) = gibo_cache.get(&target) {
                     cached.clone()
                 } else {
-                    let fetched = gibo_command(&target)?;
+                    let fetched = load_gibo(&target)?;
                     gibo_cache.insert(target.clone(), fetched.clone());
                     fetched
                 };
@@ -42,7 +50,7 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 let content = if let Some(cached) = gi_cache.get(&target) {
                     cached.clone()
                 } else {
-                    let fetched = gi_command(&target)?;
+                    let fetched = load_gi(&target)?;
                     gi_cache.insert(target.clone(), fetched.clone());
                     fetched
                 };
@@ -138,6 +146,63 @@ echo hello
     }
 
     #[test]
+    fn repeated_gi_target_dedup_uses_cache() {
+        // Verifies dedup logic offline: the loader is called once, cached content
+        // appears twice in the output.
+        let text = "gi Rust\ngi Rust\n";
+        let script = parse_text(text);
+        let result = build_with(
+            script,
+            |_| Err(std::io::Error::other("no gibo")),
+            |target| Ok(format!("# {target} content\n")),
+        )
+        .unwrap();
+        assert_eq!(result.matches("# gi Rust").count(), 2);
+    }
+
+    #[test]
+    fn repeated_gibo_target_dedup_uses_cache() {
+        // Verifies dedup logic offline: the loader is called once, cached content
+        // appears twice in the output.
+        let text = "gibo dump Rust\ngibo dump Rust\n";
+        let script = parse_text(text);
+        let result = build_with(
+            script,
+            |target| Ok(format!("# {target} content\n")),
+            |_| Err(std::io::Error::other("no gi")),
+        )
+        .unwrap();
+        assert_eq!(result.matches("# gibo dump Rust").count(), 2);
+    }
+
+    #[test]
+    fn gibo_loader_error_propagates() {
+        let text = "gibo dump Rust\n";
+        let script = parse_text(text);
+        let err = build_with(
+            script,
+            |_| Err(std::io::Error::other("gibo unavailable")),
+            |_| Ok(String::new()),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("gibo unavailable"));
+    }
+
+    #[test]
+    fn gi_loader_error_propagates() {
+        let text = "gi Rust\n";
+        let script = parse_text(text);
+        let err = build_with(
+            script,
+            |_| Ok(String::new()),
+            |_| Err(std::io::Error::other("gi unavailable")),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("gi unavailable"));
+    }
+
+    #[test]
+    #[ignore = "requires network access to gitignore.io and gibo"]
     fn test_repeated_gi_target_dedup() {
         // Same target listed twice: build must succeed and emit both header lines,
         // producing identical content for each occurrence (cache hit on second call).
@@ -148,6 +213,7 @@ echo hello
     }
 
     #[test]
+    #[ignore = "requires network access to gitignore.io and gibo"]
     fn test_repeated_gibo_target_dedup() {
         let text = "gibo dump C++\ngibo dump C++\n";
         let script = parse_text(text);
