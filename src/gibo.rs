@@ -10,14 +10,19 @@ const MAX_SUBPROCESS_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_SUBPROCESS_STDERR_BYTES: usize = 4 * 1024;
 
 fn truncate_stderr(s: &str) -> String {
-    if s.len() <= MAX_SUBPROCESS_STDERR_BYTES {
-        return s.to_string();
+    let sanitized: String = s.chars().filter(|c| !c.is_control()).collect();
+    if sanitized.len() <= MAX_SUBPROCESS_STDERR_BYTES {
+        return sanitized;
     }
     let mut end = MAX_SUBPROCESS_STDERR_BYTES;
-    while !s.is_char_boundary(end) {
+    while !sanitized.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{} ...[{} bytes truncated]", &s[..end], s.len() - end)
+    format!(
+        "{} ...[{} bytes truncated]",
+        &sanitized[..end],
+        sanitized.len() - end
+    )
 }
 
 pub fn gibo_root() -> std::io::Result<String> {
@@ -381,6 +386,20 @@ mod tests {
     fn test_truncate_stderr_short() {
         let s = "short error";
         assert_eq!(truncate_stderr(s), s);
+    }
+
+    #[test]
+    fn test_truncate_stderr_strips_control_chars() {
+        let s = "error: \x1b[31mfailed\x1b[0m";
+        let result = truncate_stderr(s);
+        assert!(
+            !result.contains('\x1b'),
+            "ANSI escape sequences should be stripped"
+        );
+        assert!(
+            result.contains("failed"),
+            "message content should be preserved"
+        );
     }
 
     #[test]
