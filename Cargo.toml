@@ -13,7 +13,7 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
-env_logger = "0.11"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
 libc = "0.2"
 log = "0.4"
 reqwest = { version = "0.13.0", features = ["blocking"] }
