@@ -40,6 +40,11 @@ pub fn parse_line(text: &str) -> GitIgnoreStatement {
         };
         return GitIgnoreStatement::Echo(Echo::Content(parts.join(" ")));
     }
+    // Store the full line including the leading `#` so that build() can
+    // distinguish comments from section headers by prefixing `# ` again,
+    // producing the `# # comment` double-hash encoding in the output
+    // .gitignore.  restore() detects that `# #` prefix to recover the
+    // original comment line.
     if text.starts_with('#') {
         return GitIgnoreStatement::Comment(Comment::Content(text.to_string()));
     }
