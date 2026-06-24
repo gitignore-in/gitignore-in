@@ -163,7 +163,10 @@ fn run(cli: Cli) -> std::io::Result<()> {
             eprintln!("Inferred .gitignore.in");
             build_gitignore()
         }
-        None => build_gitignore(),
+        None => {
+            pin_boilerplates_if_requested()?;
+            build_gitignore()
+        }
     }
 }
 
