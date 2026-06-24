@@ -118,6 +118,13 @@ enum Commands {
         /// Minimum number of matching lines required for a template
         #[arg(long, default_value_t = 2)]
         min_overlap: usize,
+        /// Minimum percentage of a template's lines that must match
+        #[arg(
+            long,
+            default_value_t = infer::DEFAULT_MIN_OVERLAP_PERCENT,
+            value_parser = clap::value_parser!(u8).range(0..=100)
+        )]
+        min_overlap_percent: u8,
     },
 }
 
@@ -156,10 +163,11 @@ fn run(cli: Cli) -> std::io::Result<()> {
             gibo,
             gi,
             min_overlap,
+            min_overlap_percent,
         }) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
-            infer_gitignore_in_file(gibo, gi, min_overlap)?;
+            infer_gitignore_in_file(gibo, gi, min_overlap, min_overlap_percent)?;
             eprintln!("Inferred .gitignore.in");
             build_gitignore()
         }
@@ -245,7 +253,12 @@ fn bootstrap_gitignore_in_file() -> std::io::Result<BootstrapStatus> {
     }
 
     if Path::new(".gitignore").exists() {
-        infer_gitignore_in_file(Vec::new(), Vec::new(), 2)?;
+        infer_gitignore_in_file(
+            Vec::new(),
+            Vec::new(),
+            2,
+            infer::DEFAULT_MIN_OVERLAP_PERCENT,
+        )?;
         return Ok(BootstrapStatus::Inferred);
     }
 
@@ -287,6 +300,7 @@ fn infer_gitignore_in_file(
     gibo_targets: Vec<String>,
     gi_targets: Vec<String>,
     min_overlap: usize,
+    min_overlap_percent: u8,
 ) -> std::io::Result<()> {
     let path = std::path::Path::new(".gitignore");
     let file = std::fs::File::open(path)?;
@@ -306,6 +320,7 @@ fn infer_gitignore_in_file(
             gibo_targets,
             gi_targets,
             min_overlap,
+            min_overlap_percent,
         },
     )?;
     atomic_write(
@@ -528,6 +543,8 @@ mod tests {
             "node",
             "--min-overlap",
             "3",
+            "--min-overlap-percent",
+            "75",
         ]);
 
         match cli.command {
@@ -535,10 +552,12 @@ mod tests {
                 gibo,
                 gi,
                 min_overlap,
+                min_overlap_percent,
             }) => {
                 assert_eq!(gibo, vec!["Rust".to_string(), "macOS".to_string()]);
                 assert_eq!(gi, vec!["node".to_string()]);
                 assert_eq!(min_overlap, 3);
+                assert_eq!(min_overlap_percent, 75);
             }
             _ => unreachable!(),
         }
@@ -694,6 +713,7 @@ mod tests {
                 gibo: Vec::new(),
                 gi: Vec::new(),
                 min_overlap: 2,
+                min_overlap_percent: infer::DEFAULT_MIN_OVERLAP_PERCENT,
             }),
         });
         assert!(result.is_ok(), "infer should succeed: {result:?}");
@@ -729,6 +749,7 @@ mod tests {
                 gibo: Vec::new(),
                 gi: Vec::new(),
                 min_overlap: 2,
+                min_overlap_percent: infer::DEFAULT_MIN_OVERLAP_PERCENT,
             }),
         });
 
