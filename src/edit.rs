@@ -18,6 +18,28 @@ pub(crate) struct TemplateRef {
     pub(crate) target: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineEnding {
+    Lf,
+    Crlf,
+}
+
+impl LineEnding {
+    pub(crate) fn detect(text: &str) -> Self {
+        match text.find('\n') {
+            Some(index) if index > 0 && text.as_bytes()[index - 1] == b'\r' => Self::Crlf,
+            _ => Self::Lf,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Lf => "\n",
+            Self::Crlf => "\r\n",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Catalog {
     entries: HashMap<String, Vec<TemplateRef>>,
@@ -187,7 +209,7 @@ pub(crate) fn remove_templates(
     Ok(removed)
 }
 
-pub(crate) fn render(script: &GitIgnoreIn) -> String {
+pub(crate) fn render_with_line_ending(script: &GitIgnoreIn, line_ending: LineEnding) -> String {
     if script.content.is_empty() {
         return String::new();
     }
@@ -209,7 +231,8 @@ pub(crate) fn render(script: &GitIgnoreIn) -> String {
         })
         .collect();
 
-    lines.join("\n") + "\n"
+    let separator = line_ending.as_str();
+    lines.join(separator) + separator
 }
 
 fn contains_template(script: &GitIgnoreIn, query: &str) -> bool {
@@ -414,9 +437,34 @@ mod tests {
         };
 
         assert_eq!(
-            render(&script),
+            render_with_line_ending(&script, LineEnding::Lf),
             "# comment\n\ngibo dump macOS\necho '!.env'\n"
         );
+    }
+
+    #[test]
+    fn render_with_line_ending_uses_crlf() {
+        let script = GitIgnoreIn {
+            content: vec![
+                GitIgnoreStatement::Comment(Comment::Content("# comment".to_string())),
+                GitIgnoreStatement::Gibo(Gibo::Target("Rust".to_string())),
+            ],
+        };
+
+        assert_eq!(
+            render_with_line_ending(&script, LineEnding::Crlf),
+            "# comment\r\ngibo dump Rust\r\n"
+        );
+    }
+
+    #[test]
+    fn line_ending_detects_first_newline_style() {
+        assert_eq!(
+            LineEnding::detect("# header\r\ngi Rust\n"),
+            LineEnding::Crlf
+        );
+        assert_eq!(LineEnding::detect("# header\ngi Rust\r\n"), LineEnding::Lf);
+        assert_eq!(LineEnding::detect("# header"), LineEnding::Lf);
     }
 
     #[test]
