@@ -31,6 +31,7 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                     cached.clone()
                 } else {
                     let fetched = gibo_command(&target)?;
+                    validate_generated_section_content("gibo dump", &target, &fetched)?;
                     gibo_cache.insert(target.clone(), fetched.clone());
                     fetched
                 };
@@ -43,6 +44,7 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                     cached.clone()
                 } else {
                     let fetched = gi_command(&target)?;
+                    validate_generated_section_content("gi", &target, &fetched)?;
                     gi_cache.insert(target.clone(), fetched.clone());
                     fetched
                 };
@@ -73,6 +75,20 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
 
 fn separator() -> String {
     format!("{SEPARATOR}\n")
+}
+
+fn validate_generated_section_content(
+    command: &str,
+    target: &str,
+    content: &str,
+) -> std::io::Result<()> {
+    if content.lines().any(|line| line == SEPARATOR) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("{command} {target}: template output contains the reserved section separator"),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -169,6 +185,22 @@ echo hello
         let script = parse_text(text);
         let err = build(script).unwrap_err();
         assert!(err.to_string().contains("reserved section header prefix"));
+    }
+
+    #[test]
+    fn test_generated_template_content_with_separator_line_is_rejected() {
+        let content = format!("first\n{SEPARATOR}\nsecond\n");
+        let err = validate_generated_section_content("gibo dump", "Rust", &content).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err
+            .to_string()
+            .contains("template output contains the reserved section separator"));
+    }
+
+    #[test]
+    fn test_generated_template_content_with_separator_substring_is_allowed() {
+        let content = format!("before {SEPARATOR} after\n");
+        validate_generated_section_content("gi", "Rust", &content).unwrap();
     }
 
     #[test]
