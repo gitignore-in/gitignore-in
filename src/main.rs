@@ -348,6 +348,7 @@ fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io
         Err(e) => return Err(e),
     }
 
+    let line_ending = detect_gitignore_in_line_ending()?;
     let mut script = parse_gitignore_in_file()?;
     match mode {
         UpdateMode::Add => {
@@ -358,8 +359,19 @@ fn update_gitignore_in_file(mode: UpdateMode, templates: Vec<String>) -> std::io
             edit::remove_templates(&mut script, &templates)?;
         }
     }
-    atomic_write(Path::new(".gitignore.in"), edit::render(&script))?;
+    atomic_write(
+        Path::new(".gitignore.in"),
+        edit::render_with_line_ending(&script, line_ending),
+    )?;
     Ok(())
+}
+
+fn detect_gitignore_in_line_ending() -> std::io::Result<edit::LineEnding> {
+    let mut content = String::new();
+    std::fs::File::open(".gitignore.in")?
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_string(&mut content)?;
+    Ok(edit::LineEnding::detect(&content))
 }
 
 fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
@@ -738,5 +750,35 @@ mod tests {
         let preserved =
             std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
         assert_eq!(preserved, original);
+    }
+
+    #[test]
+    fn add_preserves_existing_gitignore_in_crlf_line_endings() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.as_path());
+        std::fs::write(
+            ".gitignore.in",
+            "# See https://gitignore.in/\r\n# Edit this file and run `gitignore.in` to rebuild .gitignore\r\n\r\ngibo dump Rust\r\n",
+        )
+        .expect("failed to write .gitignore.in");
+
+        let result = run(Cli {
+            command: Some(Commands::Add {
+                templates: vec!["macOS".to_string()],
+            }),
+        });
+
+        assert!(result.is_ok(), "add should succeed: {result:?}");
+        let updated = std::fs::read(".gitignore.in").expect("failed to read .gitignore.in");
+        let updated = String::from_utf8(updated).expect(".gitignore.in should be utf-8");
+        assert!(
+            updated.contains("gibo dump macOS\r\n"),
+            ".gitignore.in should contain the added template with CRLF endings: {updated:?}"
+        );
+        let without_crlf = updated.replace("\r\n", "");
+        assert!(
+            !without_crlf.contains('\n'),
+            ".gitignore.in should not contain bare LF endings after add: {updated:?}"
+        );
     }
 }
