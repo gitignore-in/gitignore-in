@@ -389,18 +389,16 @@ fn gitignore_in_template_header() -> String {
 }
 
 fn add_gitignore_in_header(content: &str) -> String {
-    if GITIGNORE_IN_HEADER_LINES
-        .iter()
-        .all(|line| content.contains(line))
-    {
+    let header = gitignore_in_template_header();
+    if content.starts_with(&header) {
         return content.to_string();
     }
 
     if content.is_empty() {
-        return gitignore_in_template_header();
+        return header;
     }
 
-    format!("{}\n{}", gitignore_in_template_header(), content)
+    format!("{header}\n{content}")
 }
 
 #[cfg(test)]
@@ -602,6 +600,13 @@ mod tests {
     fn add_gitignore_in_header_keeps_existing_header() {
         let content = "# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n";
         assert_eq!(add_gitignore_in_header(content), content);
+    }
+
+    #[test]
+    fn add_gitignore_in_header_requires_header_at_start() {
+        let content = "manual note\n# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n";
+        let expected = format!("{}\n{}", gitignore_in_template_header(), content);
+        assert_eq!(add_gitignore_in_header(content), expected);
     }
 
     #[test]
