@@ -28,6 +28,10 @@ pub(crate) fn restore(text: &str) -> String {
                 continue;
             }
 
+            if section_head == SEPARATOR {
+                continue;
+            }
+
             result.push(format!("echo {}", shell_quote(section_head)));
 
             continue;
@@ -200,6 +204,17 @@ plain-entry
         );
         let restored = restore(text);
         assert_eq!(restored, "gi 'Visual Studio'\n");
+    }
+
+    #[test]
+    fn consecutive_separators_produce_no_echo() {
+        // A manually-edited .gitignore may contain two adjacent separators.
+        // The second separator must be skipped, not emitted as `echo '# ---...---'`.
+        let text = concat!(
+            "# -----------------------------------------------------------------------------\n",
+            "# -----------------------------------------------------------------------------\n",
+        );
+        assert_eq!(restore(text), "\n");
     }
 
     #[test]
