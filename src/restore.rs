@@ -210,7 +210,7 @@ plain-entry
         use crate::parser::parse_text;
         let input = "echo ''\n";
         let script = parse_text(input);
-        let built = build(script).unwrap();
+        let built = build(script, Default::default()).unwrap();
         let restored = restore(&built);
         assert_eq!(restored, input);
     }

@@ -35,23 +35,38 @@ impl Default for InferOptions {
     }
 }
 
-pub(crate) fn infer_with_options(text: &str, options: &InferOptions) -> std::io::Result<String> {
+/// Infer a `.gitignore.in` from `text` and also return the raw template
+/// content fetched during inference, keyed by target name.
+///
+/// The returned [`crate::build::TemplateCache`] can be passed to
+/// fetched during inference, keyed by target name.
+///
+/// The returned [`crate::build::TemplateCache`] can be passed to
+/// [`crate::build::build`] as a seed so the subsequent build phase reuses
+/// the already-fetched content instead of fetching each template a second time.
+pub(crate) fn infer_with_cache(
+    text: &str,
+    options: &InferOptions,
+) -> std::io::Result<(String, crate::build::TemplateCache)> {
     let has_explicit_targets = matches!(options.gibo_targets, TemplateTargets::Explicit(_))
         || matches!(options.gi_targets, TemplateTargets::Explicit(_));
     if !has_explicit_targets && restore::looks_generated(text) {
-        return Ok(restore::restore(text));
+        return Ok((
+            restore::restore(text),
+            crate::build::TemplateCache::default(),
+        ));
     }
 
-    let candidates = load_candidates(options)?;
-    Ok(infer_from_candidates(
-        text,
-        &candidates,
-        options.min_overlap,
-    ))
+    let (candidates, cache) = load_candidates(options)?;
+    let inferred = infer_from_candidates(text, &candidates, options.min_overlap);
+    Ok((inferred, cache))
 }
 
-fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
+fn load_candidates(
+    options: &InferOptions,
+) -> std::io::Result<(Vec<Candidate>, crate::build::TemplateCache)> {
     let mut candidates = Vec::new();
+    let mut cache = crate::build::TemplateCache::default();
     let gibo_targets = match &options.gibo_targets {
         TemplateTargets::All => gibo_list()?,
         TemplateTargets::Explicit(targets) => targets.clone(),
@@ -63,6 +78,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
 
     for target in &gibo_targets {
         let content = gibo_command(target)?;
+        cache.gibo.insert(target.clone(), content.clone());
         candidates.push(Candidate {
             command: format!("gibo dump {}", shell_quote_target(target)),
             lines: normalize_content(&content),
@@ -71,6 +87,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
 
     for target in &gi_targets {
         let content = gi_command(target)?;
+        cache.gi.insert(target.clone(), content.clone());
         candidates.push(Candidate {
             command: format!("gi {}", shell_quote_target(target)),
             lines: normalize_content(&content),
@@ -78,7 +95,7 @@ fn load_candidates(options: &InferOptions) -> std::io::Result<Vec<Candidate>> {
     }
 
     candidates.sort_by(|a, b| a.command.cmp(&b.command));
-    Ok(candidates)
+    Ok((candidates, cache))
 }
 
 pub(crate) fn infer_from_candidates(
@@ -296,7 +313,7 @@ mod tests {
             # Edit .gitignore.in instead of this file\n\
             # Run `gitignore.in` to build .gitignore\n\
             target/\n";
-        let result = infer_with_options(generated, &InferOptions::default()).unwrap();
+        let (result, _) = infer_with_cache(generated, &InferOptions::default()).unwrap();
         assert_eq!(result, restore::restore(generated));
     }
 
