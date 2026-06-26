@@ -221,7 +221,10 @@ plain-entry
             "plain-entry\n",
         );
         let restored = restore(text);
-        assert!(!restored.contains("# gitignore.in format: v1"), "{restored}");
+        assert!(
+            !restored.contains("# gitignore.in format: v1"),
+            "{restored}"
+        );
         assert!(restored.contains("echo 'plain-entry'"), "{restored}");
     }
 

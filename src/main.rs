@@ -17,9 +17,8 @@ mod script;
 
 const AFTER_HELP: &str =
     "Official site: https://gitignore.in/\nRepository: https://github.com/gitignore-in/gitignore-in";
-const GITIGNORE_IN_HEADER_LINES: [&str; 3] = [
+const GITIGNORE_IN_HEADER_LINES: [&str; 2] = [
     "# See https://gitignore.in/",
-    "# gitignore.in format: v1",
     "# Edit this file and run `gitignore.in` to rebuild .gitignore",
 ];
 // Stable public env-var API: callers in CI may rely on this across tool versions.
@@ -388,12 +387,23 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
 }
 
 fn gitignore_in_template_header() -> String {
-    GITIGNORE_IN_HEADER_LINES.join("\n") + "\n"
+    // Derive the format-version marker from the format-module constants instead of
+    // hard-coding it here, so migration tooling and this header share one source of truth.
+    format!(
+        "{}\n{}{}\n{}\n",
+        GITIGNORE_IN_HEADER_LINES[0],
+        format::GITIGNORE_IN_FORMAT_PREFIX,
+        format::GITIGNORE_IN_FORMAT_VERSION,
+        GITIGNORE_IN_HEADER_LINES[1],
+    )
 }
 
 fn add_gitignore_in_header(content: &str) -> String {
-    // Check only the primary identity marker; older files may lack the version line.
-    if content.contains(GITIGNORE_IN_HEADER_LINES[0]) {
+    // Skip when the file already carries our identity marker or declares a format
+    // version; older files may lack the version line, versioned files clearly have a header.
+    if content.contains(GITIGNORE_IN_HEADER_LINES[0])
+        || format::gitignore_in_format_version(content).is_some()
+    {
         return content.to_string();
     }
 
