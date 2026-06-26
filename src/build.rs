@@ -140,7 +140,13 @@ echo hello
 
     #[test]
     fn generated_header_includes_official_site() {
-        let result = build(GitIgnoreIn { content: Vec::new() }, Default::default()).unwrap();
+        let result = build(
+            GitIgnoreIn {
+                content: Vec::new(),
+            },
+            Default::default(),
+        )
+        .unwrap();
         assert!(result.contains("# See https://gitignore.in/"));
     }
 

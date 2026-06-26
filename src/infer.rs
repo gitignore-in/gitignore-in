@@ -51,7 +51,10 @@ pub(crate) fn infer_with_cache(
     let has_explicit_targets = matches!(options.gibo_targets, TemplateTargets::Explicit(_))
         || matches!(options.gi_targets, TemplateTargets::Explicit(_));
     if !has_explicit_targets && restore::looks_generated(text) {
-        return Ok((restore::restore(text), crate::build::TemplateCache::default()));
+        return Ok((
+            restore::restore(text),
+            crate::build::TemplateCache::default(),
+        ));
     }
 
     let (candidates, cache) = load_candidates(options)?;
