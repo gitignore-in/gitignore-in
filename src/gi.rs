@@ -25,6 +25,10 @@ fn sanitize_error_body(body: &str) -> String {
         .collect()
 }
 
+pub(crate) fn sanitize_target(target: &str) -> String {
+    target.chars().filter(|c| !c.is_control()).collect()
+}
+
 fn target_url(target: &str) -> std::io::Result<Url> {
     let mut url = Url::parse(BASE_URL)
         .map_err(|e| std::io::Error::other(format!("Invalid BASE_URL `{BASE_URL}`: {e}")))?;
@@ -41,6 +45,7 @@ fn validate_gi_response(
     target: &str,
     url: &Url,
 ) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     if !status.is_success() {
         let kind = if status.is_server_error() {
             std::io::ErrorKind::ConnectionAborted
@@ -324,6 +329,36 @@ mod tests {
         let err = validate_gi_response(StatusCode::OK, body, "foo", &dummy_url()).unwrap_err();
         assert!(err.to_string().contains("ERROR"));
         assert!(err.to_string().contains("is undefined"));
+    }
+
+    #[test]
+    fn test_sanitize_target_strips_control_chars() {
+        assert_eq!(sanitize_target("Rust\x1b[0m"), "Rust[0m");
+        assert_eq!(sanitize_target("Rust\nFAKE"), "RustFAKE");
+        assert_eq!(sanitize_target("Rust\x00null"), "Rustnull");
+    }
+
+    #[test]
+    fn test_sanitize_target_preserves_normal_names() {
+        assert_eq!(sanitize_target("Rust"), "Rust");
+        assert_eq!(sanitize_target("C++"), "C++");
+        assert_eq!(sanitize_target("C#"), "C#");
+    }
+
+    #[test]
+    fn test_validate_gi_response_target_is_sanitized_in_error() {
+        let err = validate_gi_response(
+            StatusCode::NOT_FOUND,
+            "not found".to_string(),
+            "Rust\x1b[0m\nFAKE",
+            &dummy_url(),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.chars().any(|c| c.is_control()),
+            "control char in error message: {msg:?}"
+        );
     }
 
     #[test]
