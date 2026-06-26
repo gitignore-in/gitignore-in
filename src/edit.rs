@@ -60,7 +60,23 @@ impl Catalog {
         }
 
         if catalog.entries.is_empty() && !errors.is_empty() {
-            let kind = errors[0].1.kind();
+            let kind = errors
+                .iter()
+                .map(|(_, e)| e.kind())
+                .find(|&k| {
+                    matches!(
+                        k,
+                        io::ErrorKind::BrokenPipe
+                            | io::ErrorKind::ConnectionAborted
+                            | io::ErrorKind::ConnectionRefused
+                            | io::ErrorKind::ConnectionReset
+                            | io::ErrorKind::Interrupted
+                            | io::ErrorKind::NotConnected
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::UnexpectedEof
+                    )
+                })
+                .unwrap_or_else(|| errors[0].1.kind());
             let details = errors
                 .into_iter()
                 .map(|(provider, error)| format!("{provider}: {error}"))
@@ -552,7 +568,10 @@ mod tests {
         )
         .expect_err("catalog load should fail when no provider can list templates");
 
-        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        // gi's NotConnected (retriable network failure) takes priority over
+        // gibo's NotFound (permanent missing-binary error), so callers that
+        // inspect the exit code get EXIT_TEMPORARY_FAILURE (75) and can retry.
+        assert_eq!(error.kind(), std::io::ErrorKind::NotConnected);
         assert!(error.to_string().contains("gibo: missing gibo"));
         assert!(error.to_string().contains("gitignore.io: offline"));
     }
