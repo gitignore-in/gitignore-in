@@ -249,8 +249,9 @@ fn validate_gibo_list_output(
 }
 
 pub fn gibo_command(target: &str) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     let started = std::time::Instant::now();
-    let output = run_gibo_with_timeout(&["dump", target])?;
+    let output = run_gibo_with_timeout(&["dump", &target])?;
     let elapsed_ms = started.elapsed().as_millis();
     let code = output
         .status
@@ -277,7 +278,7 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
             ))
         }
     };
-    validate_gibo_command_output(output.status, stdout, &stderr, target)
+    validate_gibo_command_output(output.status, stdout, &stderr, &target)
 }
 
 pub fn gibo_list() -> std::io::Result<Vec<String>> {

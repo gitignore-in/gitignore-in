@@ -123,7 +123,8 @@ fn validate_gi_list_response(
 const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 
 pub fn gi_command(target: &str) -> std::io::Result<String> {
-    let url = target_url(target)?;
+    let target = sanitize_target(target);
+    let url = target_url(&target)?;
     let client = build_client()?;
     let started = std::time::Instant::now();
     let response = match client
@@ -156,7 +157,7 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         started.elapsed().as_millis()
     );
     let body = read_response_body_string(response, &format!("get {target} from {url}"))?;
-    validate_gi_response(status, body, target, &url)
+    validate_gi_response(status, body, &target, &url)
 }
 
 pub fn gi_list() -> std::io::Result<Vec<String>> {
