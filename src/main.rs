@@ -21,6 +21,8 @@ const GITIGNORE_IN_HEADER_LINES: [&str; 2] = [
     "# See https://gitignore.in/",
     "# Edit this file and run `gitignore.in` to rebuild .gitignore",
 ];
+// Stable public env-var API: callers in CI may rely on this across tool versions.
+const GITIGNORE_IN_BOILERPLATES_REF_ENV: &str = "GITIGNORE_IN_BOILERPLATES_REF";
 const EXIT_GENERAL_ERROR: u8 = 1;
 const EXIT_USAGE_ERROR: u8 = 2;
 const EXIT_PERMISSION_DENIED: u8 = 13;
@@ -122,7 +124,7 @@ enum Commands {
 }
 
 fn pin_boilerplates_if_requested() -> std::io::Result<()> {
-    if let Ok(ref_spec) = std::env::var("GITIGNORE_IN_BOILERPLATES_REF") {
+    if let Ok(ref_spec) = std::env::var(GITIGNORE_IN_BOILERPLATES_REF_ENV) {
         if !ref_spec.is_empty() {
             gibo::pin_boilerplates(&ref_spec)?;
         }
@@ -385,13 +387,22 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
 }
 
 fn gitignore_in_template_header() -> String {
-    GITIGNORE_IN_HEADER_LINES.join("\n") + "\n"
+    // Derive the format-version marker from the format-module constants instead of
+    // hard-coding it here, so migration tooling and this header share one source of truth.
+    format!(
+        "{}\n{}{}\n{}\n",
+        GITIGNORE_IN_HEADER_LINES[0],
+        format::GITIGNORE_IN_FORMAT_PREFIX,
+        format::GITIGNORE_IN_FORMAT_VERSION,
+        GITIGNORE_IN_HEADER_LINES[1],
+    )
 }
 
 fn add_gitignore_in_header(content: &str) -> String {
-    if GITIGNORE_IN_HEADER_LINES
-        .iter()
-        .all(|line| content.contains(line))
+    // Skip when the file already carries our identity marker or declares a format
+    // version; older files may lack the version line, versioned files clearly have a header.
+    if content.contains(GITIGNORE_IN_HEADER_LINES[0])
+        || format::gitignore_in_format_version(content).is_some()
     {
         return content.to_string();
     }
@@ -440,6 +451,15 @@ mod tests {
     }
 
     #[test]
+    fn gitignore_in_header_contains_format_version() {
+        let header = gitignore_in_template_header();
+        assert!(
+            header.contains("# gitignore.in format: v1"),
+            "header must include a format version marker"
+        );
+    }
+
+    #[test]
     fn test_main() {
         let temp_dir = Temp::new_dir().expect("failed to create temp dir");
         let _guard = CwdGuard::new(temp_dir.as_path());
@@ -450,6 +470,7 @@ mod tests {
         assert!(path.exists());
         let content = std::fs::read_to_string(path).expect("failed to read .gitignore.in");
         assert!(content.contains("# See https://gitignore.in/"));
+        assert!(content.contains("# gitignore.in format: v1"));
 
         // try again
         let result = run(Cli { command: None });
@@ -474,7 +495,7 @@ mod tests {
             std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
         assert_eq!(
             restored,
-            "# See https://gitignore.in/\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n\necho 'plain-entry'\necho '!important.txt'\n"
+            "# See https://gitignore.in/\n# gitignore.in format: v1\n# Edit this file and run `gitignore.in` to rebuild .gitignore\n\necho 'plain-entry'\necho '!important.txt'\n"
         );
     }
 
