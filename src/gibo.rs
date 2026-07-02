@@ -1,3 +1,4 @@
+use crate::gi::sanitize_target;
 use log::debug;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
@@ -192,6 +193,7 @@ fn validate_gibo_command_output(
     stderr: &str,
     target: &str,
 ) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     if status.success() {
         if stdout.is_empty() {
             return Err(std::io::Error::other(format!(
@@ -247,8 +249,9 @@ fn validate_gibo_list_output(
 }
 
 pub fn gibo_command(target: &str) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     let started = std::time::Instant::now();
-    let output = run_gibo_with_timeout(&["dump", target])?;
+    let output = run_gibo_with_timeout(&["dump", &target])?;
     let elapsed_ms = started.elapsed().as_millis();
     let code = output
         .status
@@ -275,7 +278,7 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
             ))
         }
     };
-    validate_gibo_command_output(output.status, stdout, &stderr, target)
+    validate_gibo_command_output(output.status, stdout, &stderr, &target)
 }
 
 pub fn gibo_list() -> std::io::Result<Vec<String>> {
@@ -317,6 +320,22 @@ mod tests {
     fn make_status(code: i32) -> ExitStatus {
         // unix では exit code は (code << 8) で表現される。
         ExitStatus::from_raw(code << 8)
+    }
+
+    #[test]
+    fn test_validate_gibo_command_output_target_is_sanitized() {
+        let err = validate_gibo_command_output(
+            make_status(1),
+            String::new(),
+            "error",
+            "C++\x1b[0m\nFAKE",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.chars().any(|c| c.is_control()),
+            "control char in error message: {msg:?}"
+        );
     }
 
     #[test]
