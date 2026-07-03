@@ -362,15 +362,17 @@ fn compute_updated_gitignore_in(
         ));
     }
 
-    match bootstrap_gitignore_in_file() {
-        Ok(BootstrapStatus::Initialized) => {
-            eprintln!("Initialized .gitignore.in");
+    if matches!(mode, UpdateMode::Add) {
+        match bootstrap_gitignore_in_file() {
+            Ok(BootstrapStatus::Initialized) => {
+                eprintln!("Initialized .gitignore.in");
+            }
+            Ok(BootstrapStatus::Inferred) => {
+                eprintln!("Inferred .gitignore.in from .gitignore");
+            }
+            Ok(BootstrapStatus::AlreadyPresent) => {}
+            Err(e) => return Err(e),
         }
-        Ok(BootstrapStatus::Inferred) => {
-            eprintln!("Inferred .gitignore.in from .gitignore");
-        }
-        Ok(BootstrapStatus::AlreadyPresent) => {}
-        Err(e) => return Err(e),
     }
 
     let mut script = parse_gitignore_in_file()?;
@@ -539,6 +541,29 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn test_remove_does_not_create_file_when_not_found() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.as_path());
+
+        assert!(!Path::new(".gitignore.in").exists());
+
+        let result = run(Cli {
+            command: Some(Commands::Remove {
+                templates: vec!["NonExistent".to_string()],
+            }),
+        });
+
+        assert!(
+            result.is_err(),
+            "remove on missing .gitignore.in should fail"
+        );
+        assert!(
+            !Path::new(".gitignore.in").exists(),
+            "remove must not create .gitignore.in as a side effect"
+        );
     }
 
     #[test]
