@@ -95,6 +95,10 @@ where
     }
 }
 
+// Decode the double-hash encoding that build() writes for comment lines.
+// build() stores comments as `Comment::Content("# original")` and emits
+// `# # original` (prefixing `# ` once more).  Stripping the outer `# `
+// here recovers the original `# original` line from .gitignore.in.
 fn restore_comment_line(line: &str) -> Option<String> {
     line.strip_prefix("# #")
         .map(|comment| format!("#{comment}"))
