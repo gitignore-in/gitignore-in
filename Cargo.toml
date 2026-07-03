@@ -23,4 +23,5 @@ tempfile = "3"
 url = "2.5"
 
 [dev-dependencies]
+insta = "1"
 mktemp = "0.5.1"
