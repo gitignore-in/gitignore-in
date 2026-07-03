@@ -196,6 +196,17 @@ $ cd gitignore-in
 $ cargo install --path .
 ```
 
+## Versioning and compatibility
+
+This project is currently at `0.x.y`. Under SemVer, the `0.x` range does not
+guarantee backward compatibility between minor versions. Breaking changes may
+be introduced in any `0.x` release; they are noted in the GitHub release body.
+A migration to `1.0` with a stable API contract is planned once the CLI
+interface stabilises.
+
+**Minimum Supported Rust Version (MSRV):** 1.74. Raising the MSRV is treated
+as a minor-version change and will be documented in the release notes.
+
 ## License
 
 BSD-3-Clause. See [LICENSE](./LICENSE) for the full text.
