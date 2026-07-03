@@ -4,6 +4,7 @@ use crate::{
     gi::gi_list,
     gibo::gibo_list,
     script::{Comment, Echo, Gi, Gibo, GitIgnoreIn, GitIgnoreStatement, Invalid, Meaningless},
+    shell::shell_word,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -305,13 +306,6 @@ fn template_from_statement(statement: &GitIgnoreStatement) -> Option<TemplateRef
 
 fn normalize_target_key(text: &str) -> String {
     text.trim().to_lowercase()
-}
-
-fn shell_word(text: &str) -> String {
-    match shlex::try_quote(text) {
-        Ok(quoted) => quoted.into_owned(),
-        Err(_) => format!("'{}'", text.replace('\'', r#"'\''"#)),
-    }
 }
 
 #[cfg(test)]

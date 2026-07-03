@@ -1,5 +1,6 @@
-use crate::format::{
-    GENERATED_HEADER_LINES as HEADER_LINES, LEGACY_GENERATED_HEADER_LINES, SEPARATOR,
+use crate::{
+    format::{GENERATED_HEADER_LINES as HEADER_LINES, LEGACY_GENERATED_HEADER_LINES, SEPARATOR},
+    shell::{shell_quote, shell_word},
 };
 
 pub(crate) fn restore(text: &str) -> String {
@@ -13,13 +14,13 @@ pub(crate) fn restore(text: &str) -> String {
             };
 
             if let Some(target) = section_head.strip_prefix("# gibo dump ") {
-                result.push(format!("gibo dump {}", shell_quote_target(target)));
+                result.push(format!("gibo dump {}", shell_word(target)));
                 skip_generated_section(&mut lines);
                 continue;
             }
 
             if let Some(target) = section_head.strip_prefix("# gi ") {
-                result.push(format!("gi {}", shell_quote_target(target)));
+                result.push(format!("gi {}", shell_word(target)));
                 skip_generated_section(&mut lines);
                 continue;
             }
@@ -97,18 +98,6 @@ where
 fn restore_comment_line(line: &str) -> Option<String> {
     line.strip_prefix("# #")
         .map(|comment| format!("#{comment}"))
-}
-
-fn shell_quote_target(text: &str) -> String {
-    if text.contains(|c: char| c.is_whitespace() || c == '\'') {
-        shell_quote(text)
-    } else {
-        text.to_string()
-    }
-}
-
-fn shell_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r#"'\''"#))
 }
 
 #[cfg(test)]
