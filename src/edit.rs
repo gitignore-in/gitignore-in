@@ -25,12 +25,13 @@ pub(crate) struct Catalog {
 
 impl Catalog {
     pub(crate) fn load() -> io::Result<Self> {
-        Self::load_from(gibo_list, gi_list)
+        Self::load_from(gibo_list, gi_list, &mut io::stderr())
     }
 
     fn load_from(
         load_gibo: impl FnOnce() -> io::Result<Vec<String>>,
         load_gi: impl FnOnce() -> io::Result<Vec<String>>,
+        warn: &mut impl io::Write,
     ) -> io::Result<Self> {
         let mut catalog = Self::default();
         let mut errors = Vec::new();
@@ -70,6 +71,13 @@ impl Catalog {
                 kind,
                 format!("Failed to load templates from any provider ({details})"),
             ));
+        }
+
+        for (provider, error) in &errors {
+            let _ = writeln!(
+                warn,
+                "warning: failed to load templates from {provider}: {error}"
+            );
         }
 
         Ok(catalog)
@@ -492,6 +500,7 @@ mod tests {
 
     #[test]
     fn load_from_keeps_gibo_entries_when_gi_list_fails() {
+        let mut warn = Vec::new();
         let catalog = Catalog::load_from(
             || Ok(vec!["Rust".to_string()]),
             || {
@@ -500,6 +509,7 @@ mod tests {
                     "offline",
                 ))
             },
+            &mut warn,
         )
         .expect("gibo catalog should be usable when gitignore.io is unavailable");
 
@@ -513,7 +523,34 @@ mod tests {
     }
 
     #[test]
+    fn load_from_warns_on_gi_failure_when_gibo_succeeds() {
+        let mut warn = Vec::new();
+        Catalog::load_from(
+            || Ok(vec!["Rust".to_string()]),
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "offline",
+                ))
+            },
+            &mut warn,
+        )
+        .expect("should succeed");
+
+        let output = String::from_utf8(warn).unwrap();
+        assert!(
+            output.contains("gitignore.io"),
+            "warning should name the failed provider"
+        );
+        assert!(
+            output.contains("offline"),
+            "warning should include the error message"
+        );
+    }
+
+    #[test]
     fn load_from_keeps_gi_entries_when_gibo_list_fails() {
+        let mut warn = Vec::new();
         let catalog = Catalog::load_from(
             || {
                 Err(std::io::Error::new(
@@ -522,6 +559,7 @@ mod tests {
                 ))
             },
             || Ok(vec!["Node".to_string()]),
+            &mut warn,
         )
         .expect("gitignore.io catalog should be usable when gibo is unavailable");
 
@@ -535,7 +573,50 @@ mod tests {
     }
 
     #[test]
+    fn load_from_warns_on_gibo_failure_when_gi_succeeds() {
+        let mut warn = Vec::new();
+        Catalog::load_from(
+            || {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "missing gibo",
+                ))
+            },
+            || Ok(vec!["Node".to_string()]),
+            &mut warn,
+        )
+        .expect("should succeed");
+
+        let output = String::from_utf8(warn).unwrap();
+        assert!(
+            output.contains("gibo"),
+            "warning should name the failed provider"
+        );
+        assert!(
+            output.contains("missing gibo"),
+            "warning should include the error message"
+        );
+    }
+
+    #[test]
+    fn load_from_no_warning_when_both_providers_succeed() {
+        let mut warn = Vec::new();
+        Catalog::load_from(
+            || Ok(vec!["Rust".to_string()]),
+            || Ok(vec!["Node".to_string()]),
+            &mut warn,
+        )
+        .expect("should succeed");
+
+        assert!(
+            warn.is_empty(),
+            "no warning should be emitted when both providers succeed"
+        );
+    }
+
+    #[test]
     fn load_from_errors_when_all_providers_fail() {
+        let mut warn = Vec::new();
         let error = Catalog::load_from(
             || {
                 Err(std::io::Error::new(
@@ -549,11 +630,16 @@ mod tests {
                     "offline",
                 ))
             },
+            &mut warn,
         )
         .expect_err("catalog load should fail when no provider can list templates");
 
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         assert!(error.to_string().contains("gibo: missing gibo"));
         assert!(error.to_string().contains("gitignore.io: offline"));
+        assert!(
+            warn.is_empty(),
+            "no warning should be emitted when all providers fail (error is returned instead)"
+        );
     }
 }
