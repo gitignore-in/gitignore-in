@@ -25,6 +25,10 @@ fn truncate_stderr(s: &str) -> String {
     )
 }
 
+fn strip_control_chars(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
 pub fn gibo_root() -> std::io::Result<String> {
     let output = run_gibo_with_timeout(&["root"])?;
     let code = output
@@ -50,7 +54,7 @@ pub fn gibo_root() -> std::io::Result<String> {
             truncate_stderr(&stderr)
         )));
     }
-    let root = stdout.trim().to_string();
+    let root = strip_control_chars(stdout.trim());
     if root.is_empty() {
         return Err(std::io::Error::other(
             "gibo root returned empty output; boilerplates database not initialised",
@@ -383,6 +387,27 @@ mod tests {
     fn make_status(code: i32) -> ExitStatus {
         // unix では exit code は (code << 8) で表現される。
         ExitStatus::from_raw(code << 8)
+    }
+
+    #[test]
+    fn test_strip_control_chars_removes_esc_from_ansi_sequences() {
+        // ANSI sequences start with ESC (0x1b, a control char). strip_control_chars
+        // removes the ESC byte, leaving the non-control remnant "[32m...[0m" harmless
+        // (no ESC prefix → no terminal interpretation).
+        let raw = "\x1b[32m/home/user/boilerplates\x1b[0m";
+        assert_eq!(strip_control_chars(raw), "[32m/home/user/boilerplates[0m");
+    }
+
+    #[test]
+    fn test_strip_control_chars_passthrough_clean_path() {
+        let path = "/home/user/boilerplates";
+        assert_eq!(strip_control_chars(path), path);
+    }
+
+    #[test]
+    fn test_strip_control_chars_removes_bare_esc() {
+        let raw = "\x1b";
+        assert_eq!(strip_control_chars(raw), "");
     }
 
     #[test]
