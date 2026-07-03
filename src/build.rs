@@ -36,7 +36,7 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 };
                 result.push_str(&separator());
                 result.push_str(&format!("# gibo dump {target}\n"));
-                result.push_str(&content);
+                push_external_content(&mut result, &content);
             }
             GitIgnoreStatement::Gi(Gi::Target(target)) => {
                 let content = if let Some(cached) = gi_cache.get(&target) {
@@ -48,7 +48,7 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 };
                 result.push_str(&separator());
                 result.push_str(&format!("# gi {target}\n"));
-                result.push_str(&content);
+                push_external_content(&mut result, &content);
             }
             GitIgnoreStatement::Echo(Echo::Content(echo)) => {
                 if echo.starts_with("# gibo dump ") || echo.starts_with("# gi ") {
@@ -72,6 +72,13 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
         }
     }
     Ok(result)
+}
+
+fn push_external_content(result: &mut String, content: &str) {
+    result.push_str(content);
+    if !content.ends_with('\n') {
+        result.push('\n');
+    }
 }
 
 fn separator() -> String {
@@ -156,6 +163,24 @@ echo hello
         let script = parse_text(text);
         let result = build(script).unwrap();
         assert_eq!(result.matches("# gibo dump C++").count(), 2);
+    }
+
+    #[test]
+    fn external_content_without_trailing_newline_stays_line_delimited() {
+        let mut result = String::new();
+        push_external_content(&mut result, "*.swp");
+        result.push_str(&separator());
+
+        assert_eq!(result, "*.swp\n# -----------------------------------------------------------------------------\n");
+    }
+
+    #[test]
+    fn external_content_with_trailing_newline_is_not_changed() {
+        let mut result = String::new();
+        push_external_content(&mut result, "*.swp\n");
+        result.push_str(&separator());
+
+        assert_eq!(result, "*.swp\n# -----------------------------------------------------------------------------\n");
     }
 
     #[test]
