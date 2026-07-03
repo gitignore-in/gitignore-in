@@ -86,9 +86,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Search templates available from gibo and gitignore.io
+    /// Search templates available from gibo and gitignore.io.
+    ///
+    /// Omit queries to list every available template.
     Search {
-        /// Search terms matched case-insensitively against template names
+        /// Search terms matched case-insensitively against template names.
+        /// Omit to list every available template.
         queries: Vec<String>,
     },
     /// Add templates to .gitignore.in and rebuild .gitignore
@@ -531,6 +534,24 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn search_help_documents_empty_query_behavior() {
+        use clap::CommandFactory;
+
+        let mut command = Cli::command();
+        let search = command
+            .find_subcommand_mut("search")
+            .expect("search subcommand should exist");
+        let mut help = Vec::new();
+        search
+            .write_long_help(&mut help)
+            .expect("help should render");
+        let help = String::from_utf8(help).expect("help should be valid UTF-8");
+
+        assert!(help.contains("Omit queries to list every available template"));
+        assert!(help.contains("Omit to list every available template"));
     }
 
     #[test]

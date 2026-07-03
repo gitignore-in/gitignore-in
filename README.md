@@ -99,6 +99,8 @@ This matches template names case-insensitively by substring:
 $ gitignore.in search macos rust
 ```
 
+Run `gitignore.in search` without queries to list every available template.
+
 Add templates without worrying about `gibo` vs `gi`.
 `gitignore.in` resolves names case-insensitively, prefers the provider already used in `.gitignore.in`, falls back to `gibo` when no provider is preferred, and rebuilds `.gitignore` after the update.
 
