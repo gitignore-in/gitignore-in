@@ -189,7 +189,10 @@ fn run(cli: Cli) -> std::io::Result<()> {
             eprintln!("Generated .gitignore");
             Ok(())
         }
-        None => build_gitignore(),
+        None => {
+            pin_boilerplates_if_requested()?;
+            build_gitignore()
+        }
     }
 }
 
