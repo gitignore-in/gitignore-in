@@ -137,7 +137,7 @@ jobs:
             ./artifacts
 
   deploy:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') && !github.event.release.prerelease
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
