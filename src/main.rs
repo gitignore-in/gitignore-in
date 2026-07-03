@@ -108,6 +108,11 @@ enum Commands {
     /// Providing --gibo or --gi bypasses this shortcut and always runs full inference.
     /// When both --gibo and --gi are omitted and the shortcut does not apply, all
     /// templates from both providers are checked (may trigger many network requests).
+    ///
+    /// Template scoring uses live catalog content fetched at run time. Results may
+    /// differ between runs if provider catalogs have been updated since the last
+    /// run. For reproducible gibo results, set GITIGNORE_IN_BOILERPLATES_REF to a
+    /// fixed commit SHA before running infer.
     Infer {
         /// Comma-separated gibo targets to consider
         #[arg(long, value_delimiter = ',')]
