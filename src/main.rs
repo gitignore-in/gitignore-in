@@ -383,6 +383,28 @@ fn compute_updated_gitignore_in(
     }
 
     let mut script = parse_gitignore_in_file()?;
+    let invalid: Vec<String> = script
+        .content
+        .iter()
+        .filter_map(|s| {
+            if let script::GitIgnoreStatement::Invalid(script::Invalid::Line { content, reason }) =
+                s
+            {
+                Some(format!("{content:?}: {reason}"))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if !invalid.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                ".gitignore.in contains invalid line(s); fix or remove them before editing:\n{}",
+                invalid.join("\n")
+            ),
+        ));
+    }
     match mode {
         UpdateMode::Add => {
             let catalog = edit::Catalog::load()?;
@@ -687,6 +709,50 @@ mod tests {
         let err = parse_path(&path).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("exceeds size limit"));
+    }
+
+    #[test]
+    fn add_rejects_gitignore_in_with_invalid_lines() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.as_path());
+        std::fs::write(".gitignore.in", "gibo dump Rust\ngibo dump Rust macOS\n")
+            .expect("failed to write .gitignore.in");
+
+        let exit_code = run_cli(Cli {
+            command: Some(Commands::Add {
+                templates: vec!["node".to_string()],
+            }),
+        });
+
+        assert_eq!(exit_code, ExitCode::from(EXIT_USAGE_ERROR));
+        let preserved =
+            std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
+        assert!(
+            preserved.contains("gibo dump Rust macOS"),
+            ".gitignore.in must not be modified when invalid lines are present"
+        );
+    }
+
+    #[test]
+    fn remove_rejects_gitignore_in_with_invalid_lines() {
+        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.as_path());
+        std::fs::write(".gitignore.in", "gibo dump Rust\ngibo dump Rust macOS\n")
+            .expect("failed to write .gitignore.in");
+
+        let exit_code = run_cli(Cli {
+            command: Some(Commands::Remove {
+                templates: vec!["Rust".to_string()],
+            }),
+        });
+
+        assert_eq!(exit_code, ExitCode::from(EXIT_USAGE_ERROR));
+        let preserved =
+            std::fs::read_to_string(".gitignore.in").expect("failed to read .gitignore.in");
+        assert!(
+            preserved.contains("gibo dump Rust macOS"),
+            ".gitignore.in must not be modified when invalid lines are present"
+        );
     }
 
     #[test]
