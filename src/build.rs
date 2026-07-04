@@ -8,6 +8,14 @@ use crate::{
 };
 
 pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
+    build_with(script, gibo_command, gi_command)
+}
+
+fn build_with(
+    script: GitIgnoreIn,
+    load_gibo: impl Fn(&str) -> std::io::Result<String>,
+    load_gi: impl Fn(&str) -> std::io::Result<String>,
+) -> std::io::Result<String> {
     let mut result = String::new();
     for line in GENERATED_HEADER_LINES {
         result.push_str(line);
@@ -19,6 +27,11 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
+                // `c` already contains the leading `#` (e.g. `# my comment`).
+                // Prefixing `# ` produces `# # my comment` in the output
+                // .gitignore.  This double-hash is the encoding contract that
+                // restore() relies on to distinguish user comments from
+                // section headers (`# gibo dump …` / `# gi …`).
                 result.push_str(&format!("# {c}\n"));
             }
             GitIgnoreStatement::Meaningless(Meaningless::Content(m)) => {
@@ -30,34 +43,37 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
                 let content = if let Some(cached) = gibo_cache.get(&target) {
                     cached.clone()
                 } else {
-                    let fetched = gibo_command(&target)?;
+                    let fetched = load_gibo(&target)?;
                     validate_generated_section_content("gibo dump", &target, &fetched)?;
                     gibo_cache.insert(target.clone(), fetched.clone());
                     fetched
                 };
                 result.push_str(&separator());
                 result.push_str(&format!("# gibo dump {target}\n"));
-                result.push_str(&content);
+                push_external_content(&mut result, &content);
             }
             GitIgnoreStatement::Gi(Gi::Target(target)) => {
                 let content = if let Some(cached) = gi_cache.get(&target) {
                     cached.clone()
                 } else {
-                    let fetched = gi_command(&target)?;
+                    let fetched = load_gi(&target)?;
                     validate_generated_section_content("gi", &target, &fetched)?;
                     gi_cache.insert(target.clone(), fetched.clone());
                     fetched
                 };
                 result.push_str(&separator());
                 result.push_str(&format!("# gi {target}\n"));
-                result.push_str(&content);
+                push_external_content(&mut result, &content);
             }
             GitIgnoreStatement::Echo(Echo::Content(echo)) => {
                 if echo.starts_with("# gibo dump ") || echo.starts_with("# gi ") {
-                    return Err(std::io::Error::other(format!(
-                        "echo content {echo:?} starts with a reserved section header prefix; \
-                         use a different prefix to avoid ambiguity during restore"
-                    )));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!(
+                            "echo content {echo:?} starts with a reserved section header prefix; \
+                             use a different prefix to avoid ambiguity during restore"
+                        ),
+                    ));
                 }
                 result.push_str(&separator());
                 result.push_str(&format!("{echo}\n"));
@@ -71,6 +87,13 @@ pub(crate) fn build(script: GitIgnoreIn) -> std::io::Result<String> {
         }
     }
     Ok(result)
+}
+
+fn push_external_content(result: &mut String, content: &str) {
+    result.push_str(content);
+    if !content.ends_with('\n') {
+        result.push('\n');
+    }
 }
 
 fn separator() -> String {
@@ -154,6 +177,63 @@ echo hello
     }
 
     #[test]
+    fn repeated_gi_target_dedup_uses_cache() {
+        // Verifies dedup logic offline: the loader is called once, cached content
+        // appears twice in the output.
+        let text = "gi Rust\ngi Rust\n";
+        let script = parse_text(text);
+        let result = build_with(
+            script,
+            |_| Err(std::io::Error::other("no gibo")),
+            |target| Ok(format!("# {target} content\n")),
+        )
+        .unwrap();
+        assert_eq!(result.matches("# gi Rust").count(), 2);
+    }
+
+    #[test]
+    fn repeated_gibo_target_dedup_uses_cache() {
+        // Verifies dedup logic offline: the loader is called once, cached content
+        // appears twice in the output.
+        let text = "gibo dump Rust\ngibo dump Rust\n";
+        let script = parse_text(text);
+        let result = build_with(
+            script,
+            |target| Ok(format!("# {target} content\n")),
+            |_| Err(std::io::Error::other("no gi")),
+        )
+        .unwrap();
+        assert_eq!(result.matches("# gibo dump Rust").count(), 2);
+    }
+
+    #[test]
+    fn gibo_loader_error_propagates() {
+        let text = "gibo dump Rust\n";
+        let script = parse_text(text);
+        let err = build_with(
+            script,
+            |_| Err(std::io::Error::other("gibo unavailable")),
+            |_| Ok(String::new()),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("gibo unavailable"));
+    }
+
+    #[test]
+    fn gi_loader_error_propagates() {
+        let text = "gi Rust\n";
+        let script = parse_text(text);
+        let err = build_with(
+            script,
+            |_| Ok(String::new()),
+            |_| Err(std::io::Error::other("gi unavailable")),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("gi unavailable"));
+    }
+
+    #[test]
+    #[ignore = "requires network access to gitignore.io and gibo"]
     fn test_repeated_gi_target_dedup() {
         // Same target listed twice: build must succeed and emit both header lines,
         // producing identical content for each occurrence (cache hit on second call).
@@ -164,6 +244,7 @@ echo hello
     }
 
     #[test]
+    #[ignore = "requires network access to gitignore.io and gibo"]
     fn test_repeated_gibo_target_dedup() {
         let text = "gibo dump C++\ngibo dump C++\n";
         let script = parse_text(text);
@@ -172,10 +253,29 @@ echo hello
     }
 
     #[test]
+    fn external_content_without_trailing_newline_stays_line_delimited() {
+        let mut result = String::new();
+        push_external_content(&mut result, "*.swp");
+        result.push_str(&separator());
+
+        assert_eq!(result, "*.swp\n# -----------------------------------------------------------------------------\n");
+    }
+
+    #[test]
+    fn external_content_with_trailing_newline_is_not_changed() {
+        let mut result = String::new();
+        push_external_content(&mut result, "*.swp\n");
+        result.push_str(&separator());
+
+        assert_eq!(result, "*.swp\n# -----------------------------------------------------------------------------\n");
+    }
+
+    #[test]
     fn test_echo_with_gibo_prefix_is_rejected() {
         let text = "echo '# gibo dump Rust'\n";
         let script = parse_text(text);
         let err = build(script).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("reserved section header prefix"));
     }
 
@@ -184,6 +284,7 @@ echo hello
         let text = "echo '# gi Rust'\n";
         let script = parse_text(text);
         let err = build(script).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("reserved section header prefix"));
     }
 

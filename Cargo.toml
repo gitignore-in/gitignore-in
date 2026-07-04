@@ -1,7 +1,8 @@
 [package]
 name = "gitignore-in"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
+rust-version = "1.74"
 authors = ["Yui Kitsu <kitsuyui+github@kitsuyui.com>"]
 description = "A command line tool for managing .gitignore files with gitignore.in"
 license = "BSD-3-Clause"
@@ -13,7 +14,7 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
-env_logger = "0.11"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
 libc = "0.2"
 log = "0.4"
 reqwest = { version = "0.13.0", features = ["blocking"] }
@@ -22,4 +23,5 @@ tempfile = "3"
 url = "2.5"
 
 [dev-dependencies]
+insta = "1"
 mktemp = "0.5.1"
