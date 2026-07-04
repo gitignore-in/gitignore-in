@@ -1,7 +1,7 @@
 #!/bin/sh
 # Enable GitHub Secret Scanning and Push Protection for this repository.
 #
-# Usage: ./scripts/configure-security-settings.sh [--dry-run]
+# Usage: ./scripts/admin/configure-security-settings.sh [--dry-run]
 #
 # Requires: gh CLI authenticated with a token that has admin:repo scope.
 # Idempotent: exits 0 if settings are already in the desired state.
