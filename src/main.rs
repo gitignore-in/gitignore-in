@@ -300,7 +300,7 @@ fn refuse_if_gitignore_in_exists(command: &str) -> std::io::Result<()> {
 
 fn build_content_from_str(gitignore_in_content: &str) -> std::io::Result<String> {
     let statements = parser::parse_text(gitignore_in_content);
-    build::build(statements)
+    assembler::build(statements)
 }
 
 fn compute_restored_gitignore_in() -> std::io::Result<String> {
