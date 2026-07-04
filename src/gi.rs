@@ -1,6 +1,7 @@
 use log::debug;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use std::io::ErrorKind;
 use std::io::Read;
 use std::time::Duration;
 use url::Url;
@@ -13,7 +14,10 @@ fn build_client() -> std::io::Result<Client> {
     Client::builder()
         .timeout(HTTP_TIMEOUT)
         .build()
-        .map_err(|e| std::io::Error::other(format!("Failed to build HTTP client: {e}")))
+        .map_err(|e| {
+            let (_, reason) = classify_reqwest_error(&e);
+            std::io::Error::other(format!("Failed to build HTTP client: {reason}"))
+        })
 }
 
 const BASE_URL: &str = "https://www.toptal.com/developers/gitignore/api/";
@@ -24,6 +28,23 @@ fn sanitize_error_body(body: &str) -> String {
         .filter(|c| !c.is_control())
         .take(MAX_ERROR_BODY_CHARS)
         .collect()
+}
+
+fn classify_reqwest_error(e: &reqwest::Error) -> (ErrorKind, &'static str) {
+    if e.is_timeout() {
+        (ErrorKind::TimedOut, "request timed out")
+    } else if e.is_connect() {
+        (ErrorKind::NotConnected, "connection failed")
+    } else if e.is_builder() {
+        (ErrorKind::InvalidInput, "request could not be built")
+    } else {
+        (ErrorKind::Other, "request failed")
+    }
+}
+
+fn request_error(url: &str, e: &reqwest::Error) -> std::io::Error {
+    let (kind, reason) = classify_reqwest_error(e);
+    std::io::Error::new(kind, format!("Failed to request to {url}: {reason}"))
 }
 
 fn target_url(target: &str) -> std::io::Result<Url> {
@@ -68,13 +89,28 @@ fn validate_gi_response(
             "Failed to get {target} from {url}: empty response body"
         )));
     }
-    if body.contains("ERROR") && body.contains("is undefined") {
+    if body
+        .lines()
+        .any(|line| line.contains("ERROR") && line.contains(&format!("{target} is undefined")))
+    {
         return Err(std::io::Error::other(format!(
             "Failed to get {target} from {url}: {}",
             sanitize_error_body(&body)
         )));
     }
     Ok(body)
+}
+
+fn parse_gi_list_body(body: &str) -> std::io::Result<Vec<String>> {
+    if body.is_empty() {
+        return Err(std::io::Error::other("Cached list body is empty"));
+    }
+    Ok(body
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
 }
 
 fn validate_gi_list_response(
@@ -120,30 +156,28 @@ const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 
 pub fn gi_command(target: &str) -> std::io::Result<String> {
     let url = target_url(target)?;
+    let url_str = url.as_str();
+    let cached = crate::http_cache::get(url_str);
     let client = build_client()?;
+    let mut request = client.get(url.clone()).header("User-Agent", USER_AGENT);
+    if let Some(ref c) = cached {
+        if let Some(ref etag) = c.etag {
+            request = request.header("If-None-Match", etag.as_str());
+        }
+        if let Some(ref lm) = c.last_modified {
+            request = request.header("If-Modified-Since", lm.as_str());
+        }
+    }
     let started = std::time::Instant::now();
-    let response = match client
-        .get(url.clone())
-        .header("User-Agent", USER_AGENT)
-        .send()
-    {
+    let response = match request.send() {
         Ok(r) => r,
         Err(e) => {
-            let kind = if e.is_timeout() {
-                std::io::ErrorKind::TimedOut
-            } else if e.is_connect() {
-                std::io::ErrorKind::NotConnected
-            } else {
-                std::io::ErrorKind::Other
-            };
+            let (_, reason) = classify_reqwest_error(&e);
             debug!(
-                "HTTP GET {url} -> error ({:.0}ms): {e}",
+                "HTTP GET {url} -> error ({:.0}ms): {reason}",
                 started.elapsed().as_millis()
             );
-            return Err(std::io::Error::new(
-                kind,
-                format!("Failed to request to {url}: {e}"),
-            ));
+            return Err(request_error(url.as_str(), &e));
         }
     };
     let status = response.status();
@@ -151,32 +185,60 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         "HTTP GET {url} -> {status} ({:.0}ms)",
         started.elapsed().as_millis()
     );
+    if status == StatusCode::NOT_MODIFIED {
+        if let Some(entry) = cached {
+            return Ok(entry.body);
+        }
+        return Err(std::io::Error::other(format!(
+            "Got 304 Not Modified from {url} but no cached body"
+        )));
+    }
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let body = read_response_body_string(response, &format!("get {target} from {url}"))?;
-    validate_gi_response(status, body, target, &url)
+    let result = validate_gi_response(status, body, target, &url)?;
+    crate::http_cache::put(
+        url_str,
+        &crate::http_cache::CacheEntry {
+            etag,
+            last_modified,
+            body: result.clone(),
+        },
+    );
+    Ok(result)
 }
 
 pub fn gi_list() -> std::io::Result<Vec<String>> {
     let url = format!("{BASE_URL}list?format=lines");
+    let cached = crate::http_cache::get(&url);
     let client = build_client()?;
+    let mut request = client.get(&url).header("User-Agent", USER_AGENT);
+    if let Some(ref c) = cached {
+        if let Some(ref etag) = c.etag {
+            request = request.header("If-None-Match", etag.as_str());
+        }
+        if let Some(ref lm) = c.last_modified {
+            request = request.header("If-Modified-Since", lm.as_str());
+        }
+    }
     let started = std::time::Instant::now();
-    let response = match client.get(&url).header("User-Agent", USER_AGENT).send() {
+    let response = match request.send() {
         Ok(r) => r,
         Err(e) => {
-            let kind = if e.is_timeout() {
-                std::io::ErrorKind::TimedOut
-            } else if e.is_connect() {
-                std::io::ErrorKind::NotConnected
-            } else {
-                std::io::ErrorKind::Other
-            };
+            let (_, reason) = classify_reqwest_error(&e);
             debug!(
-                "HTTP GET {url} -> error ({:.0}ms): {e}",
+                "HTTP GET {url} -> error ({:.0}ms): {reason}",
                 started.elapsed().as_millis()
             );
-            return Err(std::io::Error::new(
-                kind,
-                format!("Failed to request to {url}: {e}"),
-            ));
+            return Err(request_error(&url, &e));
         }
     };
     let status = response.status();
@@ -184,8 +246,35 @@ pub fn gi_list() -> std::io::Result<Vec<String>> {
         "HTTP GET {url} -> {status} ({:.0}ms)",
         started.elapsed().as_millis()
     );
+    if status == StatusCode::NOT_MODIFIED {
+        if let Some(entry) = cached {
+            return parse_gi_list_body(&entry.body);
+        }
+        return Err(std::io::Error::other(format!(
+            "Got 304 Not Modified from {url} but no cached body"
+        )));
+    }
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let body = read_response_body_string(response, &format!("get list from {url}"))?;
-    validate_gi_list_response(status, body, &url)
+    let result = validate_gi_list_response(status, body.clone(), &url)?;
+    crate::http_cache::put(
+        &url,
+        &crate::http_cache::CacheEntry {
+            etag,
+            last_modified,
+            body,
+        },
+    );
+    Ok(result)
 }
 
 fn read_response_body_string(
@@ -328,6 +417,18 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_gi_response_does_not_reject_independent_error_keywords() {
+        // "ERROR" and "is undefined" appearing in unrelated parts of a valid template
+        // body must not trigger the legacy error detector.
+        let body = "# ERROR handling notes\n# Check if value is undefined before use".to_string();
+        let result = validate_gi_response(StatusCode::OK, body, "rust", &dummy_url());
+        assert!(
+            result.is_ok(),
+            "unrelated occurrences of ERROR and 'is undefined' must not cause false positive"
+        );
+    }
+
+    #[test]
     fn test_sanitize_error_body_strips_control_chars() {
         // ESC (0x1b) and newline (0x0a) are control characters and are removed.
         // Printable ANSI parameter bytes like '[', '3', '1', 'm' are kept but
@@ -341,6 +442,21 @@ mod tests {
         let long = "A".repeat(MAX_ERROR_BODY_CHARS + 50);
         let result = sanitize_error_body(&long);
         assert_eq!(result.chars().count(), MAX_ERROR_BODY_CHARS);
+    }
+
+    #[test]
+    fn test_request_error_omits_reqwest_error_display() {
+        let err = Client::new()
+            .get("http://user:password@")
+            .send()
+            .expect_err("invalid URL should fail before making a request");
+        let safe = request_error("https://example.test/api/Rust", &err);
+        let msg = safe.to_string();
+
+        assert!(msg.contains("https://example.test/api/Rust"));
+        assert!(!msg.contains("user:password"));
+        assert!(!msg.contains("http://user"));
+        assert!(!msg.contains(&err.to_string()));
     }
 
     #[test]
