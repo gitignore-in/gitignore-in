@@ -3,19 +3,21 @@ use std::process::Command;
 const BIN: &str = env!("CARGO_BIN_EXE_gitignore-in");
 
 #[test]
-fn help_flag_exits_successfully() {
+fn help_output_matches_snapshot() {
     let output = Command::new(BIN).arg("--help").output().unwrap();
     assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Manage .gitignore files"));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    insta::assert_snapshot!(stdout);
 }
 
 #[test]
-fn version_flag_exits_successfully() {
+fn version_output_format_matches_snapshot() {
     let output = Command::new(BIN).arg("--version").output().unwrap();
     assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("gitignore.in"));
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    // Normalize the version number so the snapshot stays valid across releases.
+    let normalized = stdout.replace(env!("CARGO_PKG_VERSION"), "<VERSION>");
+    insta::assert_snapshot!(normalized);
 }
 
 #[test]
@@ -49,6 +51,27 @@ fn build_with_existing_gitignore_in_produces_gitignore() {
     );
     let gitignore = std::fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
     assert!(gitignore.contains("*.log"));
+}
+
+#[test]
+fn default_build_reads_boilerplates_ref_env() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = Command::new(BIN)
+        .env(
+            "GITIGNORE_IN_BOILERPLATES_REF",
+            "gitignore-in-test-missing-ref",
+        )
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Cannot resolve \"gitignore-in-test-missing-ref\""),
+        "stderr should show that the default build read the ref env var: {stderr}"
+    );
+    assert!(!tmp.path().join(".gitignore").exists());
 }
 
 #[test]
