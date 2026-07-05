@@ -1,5 +1,6 @@
 use log::debug;
 use std::io::Read;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
@@ -186,6 +187,7 @@ fn terminate_child(
     process_group_result.or(child_kill_result).or(wait_result)
 }
 
+#[cfg(unix)]
 fn kill_process_group(process_group_id: libc::pid_t) -> std::io::Result<()> {
     if process_group_id <= 0 {
         return Err(std::io::Error::other("process group id must be positive"));
@@ -390,13 +392,15 @@ pub fn gibo_list() -> std::io::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
 
+    #[cfg(unix)]
     fn make_status(code: i32) -> ExitStatus {
-        // unix では exit code は (code << 8) で表現される。
         ExitStatus::from_raw(code << 8)
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_strip_control_chars_removes_esc_from_ansi_sequences() {
         // ANSI sequences start with ESC (0x1b, a control char). strip_control_chars
@@ -426,6 +430,7 @@ mod tests {
         assert_eq!(result, stdout);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_non_zero_exit() {
         let err = validate_gibo_command_output(
@@ -439,10 +444,9 @@ mod tests {
         assert!(err.to_string().contains("failed to clone"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_non_zero_with_stdout() {
-        // exit 非ゼロでも部分的 stdout が出ているケース。garbage を
-        // `.gitignore` に書き込まないように reject する。
         let err = validate_gibo_command_output(
             make_status(2),
             "partial output\n".to_string(),
@@ -453,14 +457,15 @@ mod tests {
         assert!(err.to_string().contains("exit=2"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_zero_exit_empty_stdout() {
-        // exit 0 でも stdout が空なら空 `.gitignore` 書き込みを防ぐため reject。
         let err =
             validate_gibo_command_output(make_status(0), String::new(), "warn", "C++").unwrap_err();
         assert!(err.to_string().contains("empty stdout"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_list_output_ok() {
         let stdout = "C++\nRust\nPython\n".to_string();
@@ -468,6 +473,7 @@ mod tests {
         assert_eq!(result, vec!["C++", "Rust", "Python"]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_list_output_rejects_non_zero_exit() {
         let err =
@@ -522,6 +528,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_truncates_oversized_stderr() {
         let long_stderr = "e".repeat(MAX_SUBPROCESS_STDERR_BYTES + 1000);
@@ -530,6 +537,7 @@ mod tests {
         assert!(err.to_string().contains("truncated"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_oversized_stdout() {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
@@ -537,6 +545,7 @@ mod tests {
         assert!(err.to_string().contains("too large"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_list_output_rejects_oversized_stdout() {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
