@@ -902,8 +902,8 @@ mod tests {
 
     #[test]
     fn add_preserves_existing_gitignore_in_crlf_line_endings() {
-        let temp_dir = Temp::new_dir().expect("failed to create temp dir");
-        let _guard = CwdGuard::new(temp_dir.as_path());
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.path());
         std::fs::write(
             ".gitignore.in",
             "# See https://gitignore.in/\r\n# Edit this file and run `gitignore.in` to rebuild .gitignore\r\n\r\ngibo dump Rust\r\n",

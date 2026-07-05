@@ -489,7 +489,10 @@ mod tests {
         assert!(!result
             .chars()
             .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')));
-        assert!(result.contains("foo"), "printable content must be preserved");
+        assert!(
+            result.contains("foo"),
+            "printable content must be preserved"
+        );
         assert!(result.contains("bar"));
     }
 
