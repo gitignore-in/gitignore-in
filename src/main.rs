@@ -5,7 +5,7 @@ use std::{
     path::Path,
     process::ExitCode,
 };
-mod build;
+mod assembler;
 mod edit;
 mod format;
 mod gi;
@@ -229,7 +229,7 @@ fn build_gitignore() -> std::io::Result<()> {
         "parsed {} statements from .gitignore.in",
         statements.content.len()
     );
-    let result = build::build(statements)?;
+    let result = assembler::build(statements)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
     eprintln!("Generated .gitignore");
@@ -301,7 +301,7 @@ fn refuse_if_gitignore_in_exists(command: &str) -> std::io::Result<()> {
 
 fn build_content_from_str(gitignore_in_content: &str) -> std::io::Result<String> {
     let statements = parser::parse_text(gitignore_in_content);
-    build::build(statements)
+    assembler::build(statements)
 }
 
 fn compute_restored_gitignore_in() -> std::io::Result<String> {
