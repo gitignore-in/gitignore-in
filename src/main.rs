@@ -28,6 +28,7 @@ const EXIT_USAGE_ERROR: u8 = 2;
 const EXIT_PERMISSION_DENIED: u8 = 13;
 const EXIT_TEMPORARY_FAILURE: u8 = 75;
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_FILE_SIZE_DISPLAY: &str = "1 MiB";
 
 fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
@@ -311,7 +312,9 @@ fn compute_restored_gitignore_in() -> std::io::Result<String> {
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
+            format!(
+                ".gitignore exceeds size limit ({MAX_FILE_SIZE_DISPLAY} / {MAX_FILE_BYTES} bytes)"
+            ),
         ));
     }
     Ok(add_gitignore_in_header(&restore::restore(&content)))
@@ -329,7 +332,9 @@ fn compute_inferred_gitignore_in(
     if content.len() as u64 > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(".gitignore exceeds size limit ({MAX_FILE_BYTES} bytes)"),
+            format!(
+                ".gitignore exceeds size limit ({MAX_FILE_SIZE_DISPLAY} / {MAX_FILE_BYTES} bytes)"
+            ),
         ));
     }
 
@@ -431,7 +436,7 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!(
-                "{} exceeds size limit ({MAX_FILE_BYTES} bytes)",
+                "{} exceeds size limit ({MAX_FILE_SIZE_DISPLAY} / {MAX_FILE_BYTES} bytes)",
                 path.display()
             ),
         ));

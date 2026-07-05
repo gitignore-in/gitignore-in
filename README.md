@@ -204,6 +204,24 @@ $ cd gitignore-in
 $ cargo install --path .
 ```
 
+## Limits
+
+| Resource | Limit |
+|---|---|
+| `.gitignore.in` / `.gitignore` input file | 1 MiB |
+| gitignore.io API response body | 10 MiB |
+
+Files or responses larger than these limits cause `gitignore.in` to exit with
+exit code 2 and print a message such as:
+
+```
+Error: .gitignore.in exceeds size limit (1 MiB / 1048576 bytes)
+```
+
+These limits exist to prevent unbounded memory allocation when reading inputs.
+In practice `.gitignore` files are tens of kilobytes at most, so the limits
+are unlikely to be hit in normal use.
+
 ## Versioning and compatibility
 
 This project is currently at `0.x.y`. Under SemVer, the `0.x` range does not
@@ -214,6 +232,24 @@ interface stabilises.
 
 **Minimum Supported Rust Version (MSRV):** 1.74. Raising the MSRV is treated
 as a minor-version change and will be documented in the release notes.
+
+## Limits
+
+| Resource | Limit |
+|---|---|
+| `.gitignore.in` / `.gitignore` input file | 1 MiB |
+| gitignore.io API response body | 10 MiB |
+
+Files or responses larger than these limits cause `gitignore.in` to exit with
+exit code 2 and print a message such as:
+
+```
+Error: .gitignore.in exceeds size limit (1 MiB / 1048576 bytes)
+```
+
+These limits exist to prevent unbounded memory allocation when reading inputs.
+In practice `.gitignore` files are tens of kilobytes at most, so the limits
+are unlikely to be hit in normal use.
 
 ## License
 
