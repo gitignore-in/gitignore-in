@@ -4,6 +4,7 @@ pub(crate) const GITIGNORE_IN_FORMAT_PREFIX: &str = "# gitignore.in format: ";
 
 /// Returns the `.gitignore.in` format version from `content`, or `None` for files
 /// created before format versioning was introduced.
+#[allow(dead_code)]
 pub(crate) fn gitignore_in_format_version(content: &str) -> Option<&str> {
     content
         .lines()
