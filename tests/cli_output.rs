@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use mktemp::Temp;
+use tempfile::TempDir;
 
 fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_gitignore-in")
@@ -8,10 +8,10 @@ fn binary() -> &'static str {
 
 #[test]
 fn build_progress_goes_to_stderr() {
-    let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     let output = Command::new(binary())
-        .current_dir(temp_dir.as_path())
+        .current_dir(temp_dir.path())
         .output()
         .expect("failed to run gitignore-in");
 
@@ -32,11 +32,11 @@ fn build_progress_goes_to_stderr() {
 
 #[test]
 fn invalid_user_input_goes_to_stderr_once() {
-    let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     let output = Command::new(binary())
         .args(["add"])
-        .current_dir(temp_dir.as_path())
+        .current_dir(temp_dir.path())
         .output()
         .expect("failed to run gitignore-in");
 
@@ -59,11 +59,11 @@ fn invalid_user_input_goes_to_stderr_once() {
 
 #[test]
 fn search_no_match_exits_with_general_error_not_usage_error() {
-    let temp_dir = Temp::new_dir().expect("failed to create temp dir");
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
 
     let output = Command::new(binary())
         .args(["search", "zzz-this-cannot-possibly-match-any-template"])
-        .current_dir(temp_dir.as_path())
+        .current_dir(temp_dir.path())
         .output()
         .expect("failed to run gitignore-in");
 
