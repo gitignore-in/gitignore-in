@@ -30,6 +30,10 @@ fn sanitize_error_body(body: &str) -> String {
         .collect()
 }
 
+pub(crate) fn sanitize_target(target: &str) -> String {
+    target.chars().filter(|c| !c.is_control()).collect()
+}
+
 fn classify_reqwest_error(e: &reqwest::Error) -> (ErrorKind, &'static str) {
     if e.is_timeout() {
         (ErrorKind::TimedOut, "request timed out")
@@ -45,6 +49,12 @@ fn classify_reqwest_error(e: &reqwest::Error) -> (ErrorKind, &'static str) {
 fn request_error(url: &str, e: &reqwest::Error) -> std::io::Error {
     let (kind, reason) = classify_reqwest_error(e);
     std::io::Error::new(kind, format!("Failed to request to {url}: {reason}"))
+}
+
+fn sanitize_body(body: &str) -> String {
+    body.chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\r' | '\t'))
+        .collect()
 }
 
 fn target_url(target: &str) -> std::io::Result<Url> {
@@ -63,6 +73,7 @@ fn validate_gi_response(
     target: &str,
     url: &Url,
 ) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     if !status.is_success() {
         let kind = if status.is_server_error() {
             std::io::ErrorKind::ConnectionAborted
@@ -98,7 +109,7 @@ fn validate_gi_response(
             sanitize_error_body(&body)
         )));
     }
-    Ok(body)
+    Ok(sanitize_body(&body))
 }
 
 fn parse_gi_list_body(body: &str) -> std::io::Result<Vec<String>> {
@@ -155,7 +166,8 @@ fn validate_gi_list_response(
 const USER_AGENT: &str = concat!("gitignore.in/", env!("CARGO_PKG_VERSION"));
 
 pub fn gi_command(target: &str) -> std::io::Result<String> {
-    let url = target_url(target)?;
+    let target = sanitize_target(target);
+    let url = target_url(&target)?;
     let url_str = url.as_str();
     let cached = crate::http_cache::get(url_str);
     let client = build_client()?;
@@ -204,7 +216,7 @@ pub fn gi_command(target: &str) -> std::io::Result<String> {
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     let body = read_response_body_string(response, &format!("get {target} from {url}"))?;
-    let result = validate_gi_response(status, body, target, &url)?;
+    let result = validate_gi_response(status, body, &target, &url)?;
     crate::http_cache::put(
         url_str,
         &crate::http_cache::CacheEntry {
@@ -429,6 +441,61 @@ mod tests {
     }
 
     #[test]
+    fn test_sanitize_target_strips_control_chars() {
+        assert_eq!(sanitize_target("Rust\x1b[0m"), "Rust[0m");
+        assert_eq!(sanitize_target("Rust\nFAKE"), "RustFAKE");
+        assert_eq!(sanitize_target("Rust\x00null"), "Rustnull");
+    }
+
+    #[test]
+    fn test_sanitize_target_preserves_normal_names() {
+        assert_eq!(sanitize_target("Rust"), "Rust");
+        assert_eq!(sanitize_target("C++"), "C++");
+        assert_eq!(sanitize_target("C#"), "C#");
+    }
+
+    #[test]
+    fn test_validate_gi_response_target_is_sanitized_in_error() {
+        let err = validate_gi_response(
+            StatusCode::NOT_FOUND,
+            "not found".to_string(),
+            "Rust\x1b[0m\nFAKE",
+            &dummy_url(),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.chars().any(|c| c.is_control()),
+            "control char in error message: {msg:?}"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_body_strips_non_whitespace_control_chars() {
+        // ESC (0x1b) and NUL (0x00) are removed; \n and \t are preserved.
+        let body = "\x00### template ###\n\x1b[32mfoo\x1b[0m\n\tindented\n";
+        assert_eq!(
+            sanitize_body(body),
+            "### template ###\n[32mfoo[0m\n\tindented\n"
+        );
+    }
+
+    #[test]
+    fn test_validate_gi_response_success_body_has_control_chars_stripped() {
+        // A 200 response body containing ANSI escapes must have those stripped
+        // before the content is returned to callers.
+        let body = "### X ###\n\x1b[32mfoo\x1b[0m\nbar\n".to_string();
+        let result = validate_gi_response(StatusCode::OK, body, "X", &dummy_url()).unwrap();
+        assert!(!result
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')));
+        assert!(
+            result.contains("foo"),
+            "printable content must be preserved"
+        );
+        assert!(result.contains("bar"));
+    }
+
     fn test_sanitize_error_body_strips_control_chars() {
         // ESC (0x1b) and newline (0x0a) are control characters and are removed.
         // Printable ANSI parameter bytes like '[', '3', '1', 'm' are kept but

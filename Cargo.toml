@@ -15,13 +15,14 @@ categories = ["command-line-utilities"]
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "regex"] }
-libc = "0.2"
 log = "0.4"
 reqwest = { version = "0.13.0", features = ["blocking"] }
 shlex = "2.0.0"
 tempfile = "3"
 url = "2.5"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 insta = "1"
-mktemp = "0.5.1"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>kitsuyui/renovate-config"
+    "github>kitsuyui/renovate-config#cdad3c71e34e5abadf909c996906011bbc2b5725"
   ],
   "lockFileMaintenance": {
     "labels": ["dependencies"]
