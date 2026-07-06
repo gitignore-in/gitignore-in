@@ -117,6 +117,10 @@ $ gitignore.in remove RUST Node
 This infer mode is heuristic.
 It tries to cover the existing `.gitignore` with the specified `gibo dump ...` and `gi ...` candidates, then falls back to `echo '...'` for unmatched lines.
 If you omit both `--gibo` and `--gi`, it checks all available templates from both providers.
+By default, a candidate template must match at least two lines (`--min-overlap`)
+and at least 50% of that template's non-comment lines (`--min-overlap-percent`).
+Lower the percentage to accept sparser partial matches, or raise it to require
+tighter matches before a template is selected.
 
 Template scoring uses provider catalog content fetched at run time.
 Running `infer` again after a provider updates its catalog may produce different `.gitignore.in` output even for the same `.gitignore` input.
