@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     name: happy
-    continue-on-error: true
     steps:
       - uses: kitsuyui/happy-commit@b8724714862e1b643122b8f233b3aaca26b9825d # v0.9
         with:
