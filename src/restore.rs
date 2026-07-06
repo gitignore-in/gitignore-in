@@ -6,23 +6,9 @@ const UTF8_BOM: char = '\u{feff}';
 
 pub(crate) fn restore(text: &str) -> String {
     let mut result = Vec::new();
-    let mut lines = text
-        .lines()
-        .enumerate()
-        .map(|(index, line)| {
-            if index == 0 {
-                line.strip_prefix(UTF8_BOM).unwrap_or(line)
-            } else {
-                line
-            }
-        })
-        .peekable();
+    let mut lines = strip_generated_header(text).lines().peekable();
 
     while let Some(line) = lines.next() {
-        if HEADER_LINES.contains(&line) {
-            continue;
-        }
-
         if line == SEPARATOR {
             let Some(section_head) = lines.next() else {
                 break;
@@ -66,6 +52,36 @@ pub(crate) fn looks_generated(text: &str) -> bool {
         || LEGACY_GENERATED_HEADER_LINES
             .iter()
             .all(|line| text.contains(line))
+}
+
+fn strip_generated_header(text: &str) -> &str {
+    let text = text.strip_prefix(UTF8_BOM).unwrap_or(text);
+    strip_exact_header(text, &HEADER_LINES)
+        .or_else(|| strip_exact_header(text, &LEGACY_GENERATED_HEADER_LINES))
+        .unwrap_or(text)
+}
+
+fn strip_exact_header<'a>(text: &'a str, header: &[&str]) -> Option<&'a str> {
+    let mut remaining = text;
+    for expected in header {
+        let (line, rest) = split_first_line(remaining)?;
+        if line != *expected {
+            return None;
+        }
+        remaining = rest;
+    }
+    Some(remaining)
+}
+
+fn split_first_line(text: &str) -> Option<(&str, &str)> {
+    if text.is_empty() {
+        return None;
+    }
+    if let Some(line_end) = text.find('\n') {
+        Some((&text[..line_end], &text[line_end + 1..]))
+    } else {
+        Some((text, ""))
+    }
 }
 
 fn skip_generated_section<'a, I>(lines: &mut std::iter::Peekable<I>)
