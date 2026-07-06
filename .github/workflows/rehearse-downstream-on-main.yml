@@ -20,6 +20,7 @@ permissions:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       released_version: ${{ steps.resolve.outputs.released_version }}
       candidate_version: ${{ steps.resolve.outputs.candidate_version }}
@@ -42,6 +43,7 @@ jobs:
 
   dispatch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: resolve
     strategy:
       fail-fast: false
@@ -50,6 +52,15 @@ jobs:
           - gitignore-in/homebrew-gitignore-in
           - gitignore-in/gh-action
     steps:
+      - name: Require downstream release token
+        env:
+          DOWNSTREAM_RELEASE_PAT: ${{ secrets.DOWNSTREAM_RELEASE_PAT }}
+        run: |
+          if [ -z "${DOWNSTREAM_RELEASE_PAT}" ]; then
+            echo "DOWNSTREAM_RELEASE_PAT secret is required to dispatch downstream rehearsal workflows." >&2
+            exit 1
+          fi
+
       - name: Dispatch downstream rehearsal
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
         with:

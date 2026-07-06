@@ -1,5 +1,7 @@
+use crate::gi::sanitize_target;
 use log::debug;
 use std::io::Read;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
@@ -10,14 +12,23 @@ const MAX_SUBPROCESS_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_SUBPROCESS_STDERR_BYTES: usize = 4 * 1024;
 
 fn truncate_stderr(s: &str) -> String {
-    if s.len() <= MAX_SUBPROCESS_STDERR_BYTES {
-        return s.to_string();
+    let sanitized: String = s.chars().filter(|c| !c.is_control()).collect();
+    if sanitized.len() <= MAX_SUBPROCESS_STDERR_BYTES {
+        return sanitized;
     }
     let mut end = MAX_SUBPROCESS_STDERR_BYTES;
-    while !s.is_char_boundary(end) {
+    while !sanitized.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{} ...[{} bytes truncated]", &s[..end], s.len() - end)
+    format!(
+        "{} ...[{} bytes truncated]",
+        &sanitized[..end],
+        sanitized.len() - end
+    )
+}
+
+fn strip_control_chars(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
 }
 
 pub fn gibo_root() -> std::io::Result<String> {
@@ -45,7 +56,7 @@ pub fn gibo_root() -> std::io::Result<String> {
             truncate_stderr(&stderr)
         )));
     }
-    let root = stdout.trim().to_string();
+    let root = strip_control_chars(stdout.trim());
     if root.is_empty() {
         return Err(std::io::Error::other(
             "gibo root returned empty output; boilerplates database not initialised",
@@ -107,8 +118,16 @@ fn run_command_with_timeout(
         .stderr(Stdio::piped())
         .process_group(0)
         .spawn()?;
-    let process_group_id = libc::pid_t::try_from(child.id())
-        .map_err(|_| std::io::Error::other(format!("{program} pid is out of range")))?;
+    let process_group_id = match libc::pid_t::try_from(child.id()) {
+        Ok(pid) => pid,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::other(format!(
+                "{program} pid is out of range"
+            )));
+        }
+    };
 
     let stdout = child
         .stdout
@@ -119,24 +138,35 @@ fn run_command_with_timeout(
         .take()
         .ok_or_else(|| std::io::Error::other(format!("{program} stderr was not captured")))?;
 
-    let stdout_handle = thread::spawn(move || read_to_end(stdout));
-    let stderr_handle = thread::spawn(move || read_to_end(stderr));
+    let mut stdout_handle = Some(thread::spawn(move || read_to_end(stdout)));
+    let mut stderr_handle = Some(thread::spawn(move || read_to_end(stderr)));
+    let mut stdout_bytes = None;
+    let mut stderr_bytes = None;
     let deadline = std::time::Instant::now() + timeout;
 
     loop {
+        if let Err(error) = collect_finished_reader(&mut stdout_handle, &mut stdout_bytes, "stdout")
+        {
+            let _ = terminate_child(&mut child, process_group_id);
+            return Err(error);
+        }
+        if let Err(error) = collect_finished_reader(&mut stderr_handle, &mut stderr_bytes, "stderr")
+        {
+            let _ = terminate_child(&mut child, process_group_id);
+            return Err(error);
+        }
+
         if let Some(status) = child.try_wait()? {
             return Ok(Output {
                 status,
-                stdout: join_reader(stdout_handle, "stdout")?,
-                stderr: join_reader(stderr_handle, "stderr")?,
+                stdout: finish_reader(stdout_handle, stdout_bytes, "stdout")?,
+                stderr: finish_reader(stderr_handle, stderr_bytes, "stderr")?,
             });
         }
 
         let now = std::time::Instant::now();
         if now >= deadline {
-            let _ = kill_process_group(process_group_id);
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = terminate_child(&mut child, process_group_id);
             return Err(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!("{program} timed out after {timeout:?}"),
@@ -148,6 +178,17 @@ fn run_command_with_timeout(
     }
 }
 
+fn terminate_child(
+    child: &mut std::process::Child,
+    process_group_id: libc::pid_t,
+) -> std::io::Result<()> {
+    let process_group_result = kill_process_group(process_group_id);
+    let child_kill_result = child.kill();
+    let wait_result = child.wait().map(|_| ());
+    process_group_result.or(child_kill_result).or(wait_result)
+}
+
+#[cfg(unix)]
 fn kill_process_group(process_group_id: libc::pid_t) -> std::io::Result<()> {
     if process_group_id <= 0 {
         return Err(std::io::Error::other("process group id must be positive"));
@@ -177,6 +218,40 @@ fn read_to_end(reader: impl Read) -> std::io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+fn collect_finished_reader(
+    handle: &mut Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    bytes: &mut Option<Vec<u8>>,
+    stream: &str,
+) -> std::io::Result<()> {
+    let Some(handle_ref) = handle.as_ref() else {
+        return Ok(());
+    };
+    if !handle_ref.is_finished() {
+        return Ok(());
+    }
+
+    let joined = join_reader(
+        handle
+            .take()
+            .ok_or_else(|| std::io::Error::other(format!("{stream} reader missing")))?,
+        stream,
+    )?;
+    *bytes = Some(joined);
+    Ok(())
+}
+
+fn finish_reader(
+    handle: Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    bytes: Option<Vec<u8>>,
+    stream: &str,
+) -> std::io::Result<Vec<u8>> {
+    if let Some(bytes) = bytes {
+        return Ok(bytes);
+    }
+    let handle = handle.ok_or_else(|| std::io::Error::other(format!("{stream} reader missing")))?;
+    join_reader(handle, stream)
+}
+
 fn join_reader(
     handle: thread::JoinHandle<std::io::Result<Vec<u8>>>,
     stream: &str,
@@ -192,6 +267,7 @@ fn validate_gibo_command_output(
     stderr: &str,
     target: &str,
 ) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     if status.success() {
         if stdout.is_empty() {
             return Err(std::io::Error::other(format!(
@@ -238,17 +314,24 @@ fn validate_gibo_list_output(
             stdout.len()
         )));
     }
-    Ok(stdout
+    let templates: Vec<String> = stdout
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(ToString::to_string)
-        .collect())
+        .collect();
+    if templates.is_empty() {
+        return Err(std::io::Error::other(
+            "Failed to list templates from gibo: empty output (boilerplate DB may be uninitialized; run `gibo update`)",
+        ));
+    }
+    Ok(templates)
 }
 
 pub fn gibo_command(target: &str) -> std::io::Result<String> {
+    let target = sanitize_target(target);
     let started = std::time::Instant::now();
-    let output = run_gibo_with_timeout(&["dump", target])?;
+    let output = run_gibo_with_timeout(&["dump", &target])?;
     let elapsed_ms = started.elapsed().as_millis();
     let code = output
         .status
@@ -275,7 +358,7 @@ pub fn gibo_command(target: &str) -> std::io::Result<String> {
             ))
         }
     };
-    validate_gibo_command_output(output.status, stdout, &stderr, target)
+    validate_gibo_command_output(output.status, stdout, &stderr, &target)
 }
 
 pub fn gibo_list() -> std::io::Result<Vec<String>> {
@@ -312,11 +395,50 @@ pub fn gibo_list() -> std::io::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
 
+    #[cfg(unix)]
     fn make_status(code: i32) -> ExitStatus {
-        // unix では exit code は (code << 8) で表現される。
         ExitStatus::from_raw(code << 8)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_strip_control_chars_removes_esc_from_ansi_sequences() {
+        // ANSI sequences start with ESC (0x1b, a control char). strip_control_chars
+        // removes the ESC byte, leaving the non-control remnant "[32m...[0m" harmless
+        // (no ESC prefix → no terminal interpretation).
+        let raw = "\x1b[32m/home/user/boilerplates\x1b[0m";
+        assert_eq!(strip_control_chars(raw), "[32m/home/user/boilerplates[0m");
+    }
+
+    #[test]
+    fn test_strip_control_chars_passthrough_clean_path() {
+        let path = "/home/user/boilerplates";
+        assert_eq!(strip_control_chars(path), path);
+    }
+
+    #[test]
+    fn test_strip_control_chars_removes_bare_esc() {
+        let raw = "\x1b";
+        assert_eq!(strip_control_chars(raw), "");
+    }
+
+    #[test]
+    fn test_validate_gibo_command_output_target_is_sanitized() {
+        let err = validate_gibo_command_output(
+            make_status(1),
+            String::new(),
+            "error",
+            "C++\x1b[0m\nFAKE",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.chars().any(|c| c.is_control()),
+            "control char in error message: {msg:?}"
+        );
     }
 
     #[test]
@@ -327,6 +449,7 @@ mod tests {
         assert_eq!(result, stdout);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_non_zero_exit() {
         let err = validate_gibo_command_output(
@@ -340,10 +463,9 @@ mod tests {
         assert!(err.to_string().contains("failed to clone"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_non_zero_with_stdout() {
-        // exit 非ゼロでも部分的 stdout が出ているケース。garbage を
-        // `.gitignore` に書き込まないように reject する。
         let err = validate_gibo_command_output(
             make_status(2),
             "partial output\n".to_string(),
@@ -354,14 +476,15 @@ mod tests {
         assert!(err.to_string().contains("exit=2"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_zero_exit_empty_stdout() {
-        // exit 0 でも stdout が空なら空 `.gitignore` 書き込みを防ぐため reject。
         let err =
             validate_gibo_command_output(make_status(0), String::new(), "warn", "C++").unwrap_err();
         assert!(err.to_string().contains("empty stdout"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_list_output_ok() {
         let stdout = "C++\nRust\nPython\n".to_string();
@@ -369,6 +492,7 @@ mod tests {
         assert_eq!(result, vec!["C++", "Rust", "Python"]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_list_output_rejects_non_zero_exit() {
         let err =
@@ -378,9 +502,38 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_gibo_list_output_rejects_empty_output() {
+        // exit 0 but no templates: uninitialized or corrupted boilerplate DB
+        let err = validate_gibo_list_output(make_status(0), String::new(), "").unwrap_err();
+        assert!(err.to_string().contains("empty output"));
+    }
+
+    #[test]
+    fn test_validate_gibo_list_output_rejects_whitespace_only_output() {
+        // exit 0 but only whitespace: should also be treated as empty
+        let err =
+            validate_gibo_list_output(make_status(0), "   \n\n  \n".to_string(), "").unwrap_err();
+        assert!(err.to_string().contains("empty output"));
+    }
+
+    #[test]
     fn test_truncate_stderr_short() {
         let s = "short error";
         assert_eq!(truncate_stderr(s), s);
+    }
+
+    #[test]
+    fn test_truncate_stderr_strips_control_chars() {
+        let s = "error: \x1b[31mfailed\x1b[0m";
+        let result = truncate_stderr(s);
+        assert!(
+            !result.contains('\x1b'),
+            "ANSI escape sequences should be stripped"
+        );
+        assert!(
+            result.contains("failed"),
+            "message content should be preserved"
+        );
     }
 
     #[test]
@@ -394,6 +547,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_truncates_oversized_stderr() {
         let long_stderr = "e".repeat(MAX_SUBPROCESS_STDERR_BYTES + 1000);
@@ -402,6 +556,7 @@ mod tests {
         assert!(err.to_string().contains("truncated"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_command_output_rejects_oversized_stdout() {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
@@ -409,6 +564,7 @@ mod tests {
         assert!(err.to_string().contains("too large"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_validate_gibo_list_output_rejects_oversized_stdout() {
         let stdout = "x".repeat(MAX_SUBPROCESS_OUTPUT_BYTES + 1);
@@ -436,6 +592,22 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "timeout should return before the child command completes"
+        );
+    }
+
+    #[test]
+    fn test_run_command_with_timeout_rejects_oversized_stdout_before_timeout() {
+        let args = vec!["-c".to_string(), "trap '' PIPE; yes x; sleep 2".to_string()];
+        let started = std::time::Instant::now();
+        let err = run_command_with_timeout("sh", &args, Duration::from_secs(2)).unwrap_err();
+
+        assert!(
+            err.to_string().contains("subprocess output exceeds"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "reader error should return before the command timeout"
         );
     }
 
