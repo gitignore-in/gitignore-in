@@ -195,12 +195,8 @@ fn run(cli: Cli) -> std::io::Result<()> {
         }) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
-            let (new_in, seed) = compute_inferred_gitignore_in(
-                gibo,
-                gi,
-                min_overlap,
-                min_overlap_percent,
-            )?;
+            let (new_in, seed) =
+                compute_inferred_gitignore_in(gibo, gi, min_overlap, min_overlap_percent)?;
             atomic_write(Path::new(".gitignore.in"), &new_in)?;
             eprintln!("Inferred .gitignore.in");
             build_gitignore_with_seed(seed)
