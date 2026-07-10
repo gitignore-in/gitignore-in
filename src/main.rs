@@ -195,13 +195,11 @@ fn run(cli: Cli) -> std::io::Result<()> {
         }) => {
             pin_boilerplates_if_requested()?;
             refuse_if_gitignore_in_exists("infer")?;
-            let new_in = compute_inferred_gitignore_in(gibo, gi, min_overlap, min_overlap_percent)?;
-            let new_gitignore = build_content_from_str(&new_in)?;
+            let (new_in, seed) =
+                compute_inferred_gitignore_in(gibo, gi, min_overlap, min_overlap_percent)?;
             atomic_write(Path::new(".gitignore.in"), &new_in)?;
             eprintln!("Inferred .gitignore.in");
-            atomic_write(Path::new(".gitignore"), new_gitignore)?;
-            eprintln!("Generated .gitignore");
-            Ok(())
+            build_gitignore_with_seed(seed)
         }
         None => {
             pin_boilerplates_if_requested()?;
@@ -216,6 +214,10 @@ enum UpdateMode {
 }
 
 fn build_gitignore() -> std::io::Result<()> {
+    build_gitignore_with_seed(assembler::TemplateCache::default())
+}
+
+fn build_gitignore_with_seed(seed: assembler::TemplateCache) -> std::io::Result<()> {
     let started = std::time::Instant::now();
     match bootstrap_gitignore_in_file() {
         Ok(BootstrapStatus::AlreadyPresent) => {
@@ -241,12 +243,12 @@ fn build_gitignore() -> std::io::Result<()> {
         "parsed {} statements from .gitignore.in",
         statements.content.len()
     );
-    let result = assembler::build(statements)?;
+    let result = assembler::build_with_seed(statements, seed)?;
     let path = Path::new(".gitignore");
     atomic_write(path, result)?;
     eprintln!("Generated .gitignore");
     debug!(
-        "build_gitignore complete ({:.0}ms)",
+        "build_gitignore_with_seed complete ({:.0}ms)",
         started.elapsed().as_millis()
     );
     Ok(())
@@ -288,7 +290,7 @@ fn bootstrap_gitignore_in_file() -> std::io::Result<BootstrapStatus> {
     }
 
     if Path::new(".gitignore").exists() {
-        let content = compute_inferred_gitignore_in(
+        let (content, _) = compute_inferred_gitignore_in(
             Vec::new(),
             Vec::new(),
             2,
@@ -342,7 +344,7 @@ fn compute_inferred_gitignore_in(
     gi_targets: Vec<String>,
     min_overlap: usize,
     min_overlap_percent: u8,
-) -> std::io::Result<String> {
+) -> std::io::Result<(String, assembler::TemplateCache)> {
     let path = std::path::Path::new(".gitignore");
     let file = std::fs::File::open(path)?;
     let mut content = String::new();
@@ -357,7 +359,7 @@ fn compute_inferred_gitignore_in(
     }
 
     let (gibo_targets, gi_targets) = infer_target_selection(gibo_targets, gi_targets);
-    let inferred = infer::infer_with_options(
+    let (inferred, cache) = infer::infer_with_cache(
         &content,
         &infer::InferOptions {
             gibo_targets,
@@ -366,7 +368,7 @@ fn compute_inferred_gitignore_in(
             min_overlap_percent,
         },
     )?;
-    Ok(add_gitignore_in_header(&inferred))
+    Ok((add_gitignore_in_header(&inferred), cache))
 }
 
 fn infer_target_selection(
