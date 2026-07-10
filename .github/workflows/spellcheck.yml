@@ -17,6 +17,6 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Check spelling
-        uses: crate-ci/typos@bc212b92c93b7d2c8acb5fcb114250694513595b # master
+        uses: crate-ci/typos@3bc303c295c081add5df4a4d52a1e117f2fb2dce # master
         # typos is a Source code spell checker
         # https://github.com/crate-ci/typos
