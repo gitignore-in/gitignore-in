@@ -2,7 +2,7 @@
 name = "gitignore-in"
 version = "0.2.2"
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.85"
 authors = ["Yui Kitsu <kitsuyui+github@kitsuyui.com>"]
 description = "A command line tool for managing .gitignore files with gitignore.in"
 license = "BSD-3-Clause"
