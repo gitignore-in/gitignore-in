@@ -484,6 +484,7 @@ mod tests {
         assert!(result.contains("bar"));
     }
 
+    #[test]
     fn test_sanitize_error_body_strips_control_chars() {
         // ESC (0x1b) and newline (0x0a) are control characters and are removed.
         // Printable ANSI parameter bytes like '[', '3', '1', 'm' are kept but
