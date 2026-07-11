@@ -120,9 +120,10 @@ $ gitignore.in restore
 ## Output and Exit Status
 
 `gitignore.in search` writes matching templates to stdout as tab-separated
-`provider<TAB>template` rows. Errors are written to stderr so stdout can be
-piped to other tools. Progress messages are written to stderr only when stderr
-is a terminal, and `--quiet` suppresses them explicitly.
+`provider<TAB>template` rows. All other subcommands (`gitignore.in`, `add`,
+`remove`, `infer`, `restore`) produce no stdout output. Errors are written to
+stderr so stdout can be piped to other tools. Progress messages are written to
+stderr only when stderr is a terminal, and `--quiet` suppresses them explicitly.
 
 Exit status values are:
 
