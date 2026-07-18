@@ -92,7 +92,7 @@ jobs:
         env:
           RELEASE_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || github.head_ref }}
         run: ./scripts/check-release-version.sh "${RELEASE_REF}"
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.arch }}
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
