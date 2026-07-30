@@ -157,10 +157,12 @@ fn run_command_with_timeout(
         }
 
         if let Some(status) = child.try_wait()? {
+            let (stdout, stderr) =
+                finish_readers(stdout_handle, stdout_bytes, stderr_handle, stderr_bytes)?;
             return Ok(Output {
                 status,
-                stdout: finish_reader(stdout_handle, stdout_bytes, "stdout")?,
-                stderr: finish_reader(stderr_handle, stderr_bytes, "stderr")?,
+                stdout,
+                stderr,
             });
         }
 
@@ -250,6 +252,17 @@ fn finish_reader(
     }
     let handle = handle.ok_or_else(|| std::io::Error::other(format!("{stream} reader missing")))?;
     join_reader(handle, stream)
+}
+
+fn finish_readers(
+    stdout_handle: Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    stdout_bytes: Option<Vec<u8>>,
+    stderr_handle: Option<thread::JoinHandle<std::io::Result<Vec<u8>>>>,
+    stderr_bytes: Option<Vec<u8>>,
+) -> std::io::Result<(Vec<u8>, Vec<u8>)> {
+    let stdout_result = finish_reader(stdout_handle, stdout_bytes, "stdout");
+    let stderr_result = finish_reader(stderr_handle, stderr_bytes, "stderr");
+    Ok((stdout_result?, stderr_result?))
 }
 
 fn join_reader(
@@ -593,6 +606,39 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "timeout should return before a shell grandchild can keep pipes open"
+        );
+    }
+
+    #[test]
+    fn test_finish_readers_joins_stderr_even_when_stdout_join_fails() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+
+        let stderr_joined = Arc::new(AtomicBool::new(false));
+        let stderr_joined_in_thread = Arc::clone(&stderr_joined);
+
+        let stdout_handle = Some(thread::spawn(|| -> std::io::Result<Vec<u8>> {
+            panic!("stdout thread panic");
+        }));
+        let stderr_handle = Some(thread::spawn(move || -> std::io::Result<Vec<u8>> {
+            thread::sleep(Duration::from_millis(50));
+            stderr_joined_in_thread.store(true, Ordering::SeqCst);
+            Ok(b"stderr".to_vec())
+        }));
+
+        let started = std::time::Instant::now();
+        let err = finish_readers(stdout_handle, None, stderr_handle, None).unwrap_err();
+
+        assert!(err.to_string().contains("failed to join stdout reader"));
+        assert!(
+            stderr_joined.load(Ordering::SeqCst),
+            "stderr reader should be joined before returning the stdout join error"
+        );
+        assert!(
+            started.elapsed() >= Duration::from_millis(50),
+            "finish_readers should wait for the stderr join before returning"
         );
     }
 
