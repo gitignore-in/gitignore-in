@@ -152,6 +152,20 @@ jobs:
           path: ./artifacts
       - name: List
         run: find ./artifacts
+      - name: Verify release artifacts
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: >
+          ./scripts/check-release-artifacts.sh ./artifacts "${RELEASE_TAG}"
+          x86_64-unknown-linux-gnu
+          x86_64-unknown-linux-musl
+          aarch64-unknown-linux-gnu
+          aarch64-unknown-linux-musl
+          armv7-unknown-linux-gnueabihf
+          armv7-unknown-linux-musleabihf
+          arm-unknown-linux-gnueabihf
+          x86_64-apple-darwin
+          aarch64-apple-darwin
       - name: Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
