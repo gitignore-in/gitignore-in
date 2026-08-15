@@ -396,6 +396,45 @@ mod tests {
     }
 
     #[test]
+    fn add_templates_falls_back_to_gibo_without_a_preferred_provider() {
+        let catalog = catalog(&[(Provider::Gibo, "Rust"), (Provider::Gi, "Rust")]);
+        let mut script = GitIgnoreIn { content: vec![] };
+
+        let added = add_templates(&mut script, &catalog, &["rust".to_string()])
+            .expect("failed to add templates");
+
+        assert_eq!(
+            added,
+            vec![TemplateRef {
+                provider: Provider::Gibo,
+                target: "Rust".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn add_templates_falls_back_to_gibo_when_provider_counts_are_tied() {
+        let catalog = catalog(&[(Provider::Gibo, "Rust"), (Provider::Gi, "Rust")]);
+        let mut script = GitIgnoreIn {
+            content: vec![
+                GitIgnoreStatement::Gibo(Gibo::Target("macOS".to_string())),
+                GitIgnoreStatement::Gi(Gi::Target("node".to_string())),
+            ],
+        };
+
+        let added = add_templates(&mut script, &catalog, &["rust".to_string()])
+            .expect("failed to add templates");
+
+        assert_eq!(
+            added,
+            vec![TemplateRef {
+                provider: Provider::Gibo,
+                target: "Rust".to_string(),
+            }]
+        );
+    }
+
+    #[test]
     fn add_templates_skips_existing_target_case_insensitively() {
         let catalog = catalog(&[(Provider::Gibo, "Rust")]);
         let mut script = GitIgnoreIn {

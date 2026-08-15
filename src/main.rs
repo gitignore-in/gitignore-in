@@ -98,6 +98,11 @@ enum Commands {
         queries: Vec<String>,
     },
     /// Add templates to .gitignore.in and rebuild .gitignore
+    ///
+    /// Template names are matched case-insensitively. When a template name is
+    /// available from both providers, `add` prefers the provider already used
+    /// more often in `.gitignore.in`. If neither provider is currently
+    /// preferred, `add` falls back to `gibo`.
     Add {
         /// Template names such as Rust, macOS, or node
         templates: Vec<String>,
