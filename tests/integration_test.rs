@@ -21,6 +21,17 @@ fn version_output_format_matches_snapshot() {
 }
 
 #[test]
+fn add_help_mentions_provider_selection_fallback() {
+    let output = Command::new(BIN).args(["help", "add"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("If neither provider is currently preferred, `add` falls back to `gibo`."),
+        "stdout should document the add fallback contract: {stdout}"
+    );
+}
+
+#[test]
 fn build_in_empty_dir_creates_gitignore_in() {
     let tmp = tempfile::tempdir().unwrap();
     let output = Command::new(BIN).current_dir(tmp.path()).output().unwrap();
