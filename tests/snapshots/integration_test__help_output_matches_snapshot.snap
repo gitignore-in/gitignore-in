@@ -1,5 +1,6 @@
 ---
 source: tests/integration_test.rs
+assertion_line: 10
 expression: stdout
 ---
 Manage .gitignore files with .gitignore.in
@@ -18,6 +19,9 @@ Options:
       --quiet    Suppress progress messages
   -h, --help     Print help
   -V, --version  Print version
+
+Without a subcommand, gitignore.in bootstraps .gitignore.in when needed and rebuilds .gitignore.
+search writes provider<TAB>template rows to stdout. Other commands keep stdout empty on success and use stderr for errors and optional terminal-only progress.
 
 Official site: https://gitignore.in/
 Repository: https://github.com/gitignore-in/gitignore-in
