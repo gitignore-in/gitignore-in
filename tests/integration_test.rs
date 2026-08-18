@@ -11,6 +11,29 @@ fn help_output_matches_snapshot() {
 }
 
 #[test]
+fn help_output_describes_default_build_and_stdio_contract() {
+    let output = Command::new(BIN).arg("--help").output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(
+            "Without a subcommand, gitignore.in bootstraps .gitignore.in when needed and rebuilds .gitignore."
+        ),
+        "stdout should describe the default build behavior: {stdout}"
+    );
+    assert!(
+        stdout.contains("search writes provider<TAB>template rows to stdout."),
+        "stdout should describe the search stdout contract: {stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Other commands keep stdout empty on success and use stderr for errors and optional terminal-only progress."
+        ),
+        "stdout should describe the stdio contract for non-search commands: {stdout}"
+    );
+}
+
+#[test]
 fn version_output_format_matches_snapshot() {
     let output = Command::new(BIN).arg("--version").output().unwrap();
     assert!(output.status.success());

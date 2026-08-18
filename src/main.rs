@@ -17,8 +17,11 @@ mod restore;
 mod script;
 mod shell;
 
-const AFTER_HELP: &str =
-    "Official site: https://gitignore.in/\nRepository: https://github.com/gitignore-in/gitignore-in";
+const AFTER_HELP: &str = "Without a subcommand, gitignore.in bootstraps .gitignore.in when needed and rebuilds .gitignore.\n\
+search writes provider<TAB>template rows to stdout. Other commands keep stdout empty on success and use stderr for errors and optional terminal-only progress.\n\
+\n\
+Official site: https://gitignore.in/\n\
+Repository: https://github.com/gitignore-in/gitignore-in";
 const GITIGNORE_IN_HEADER_LINES: [&str; 2] = [
     "# See https://gitignore.in/",
     "# Edit this file and run `gitignore.in` to rebuild .gitignore",
