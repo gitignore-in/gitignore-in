@@ -18,6 +18,7 @@ jobs:
   publish:
     permissions:
       contents: read
+      id-token: write
     if: ${{ github.event_name == 'release' || startsWith(github.head_ref, 'release/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -34,17 +35,18 @@ jobs:
       - name: publish (release PR dry-run)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: cargo publish --dry-run --allow-dirty
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: publish (dry-run)
         if: github.event_name == 'release' && github.event.release.prerelease
         run: cargo publish --dry-run --allow-dirty
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Authenticate to crates.io
+        if: github.event_name == 'release' && !github.event.release.prerelease
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
 
       - name: publish
         if: github.event_name == 'release' && !github.event.release.prerelease
         run: cargo publish --allow-dirty
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
