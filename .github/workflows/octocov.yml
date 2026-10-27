@@ -39,7 +39,7 @@ jobs:
         with:
           cache-workspace-crates: true
 
-      - uses: gitignore-in/install-gibo@9e7dba9e59f184b41f542669b0864687a6f69b45 # v0.1.0
+      - uses: gitignore-in/install-gibo@4d380b7e0c027c84d237b8411d7111ff0e88cd62 # v0.2.0
 
       - name: coverage
         run: |
