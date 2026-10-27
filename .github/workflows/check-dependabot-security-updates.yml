@@ -11,7 +11,6 @@ concurrency:
 
 permissions:
   contents: read
-  administration: read
 
 jobs:
   check-dependabot-security-updates:
@@ -21,6 +20,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Check Dependabot security updates
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.DEPENDABOT_STATUS_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: ./scripts/check-dependabot-security-updates.sh

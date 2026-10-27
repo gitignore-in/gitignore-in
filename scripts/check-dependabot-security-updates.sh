@@ -7,18 +7,23 @@
 # are disabled. Exit 0 if both are enabled.
 #
 # Environment variables:
-#   GH_TOKEN             - GitHub token (required; set by actions/github-token or
-#                          secrets.GITHUB_TOKEN in GitHub Actions)
+#   GH_TOKEN             - Fine-grained GitHub token with repository
+#                          Administration: read permission (required)
 #   GITHUB_REPOSITORY    - owner/repo (default: gitignore-in/gitignore-in)
 
 set -eu
 
 REPO="${GITHUB_REPOSITORY:-gitignore-in/gitignore-in}"
 
+if [ -z "${GH_TOKEN:-}" ]; then
+	printf '::error::Set DEPENDABOT_STATUS_TOKEN to a token with repository Administration: read permission.\n'
+	exit 1
+fi
+
 gh api "repos/${REPO}/vulnerability-alerts" \
-	--silent --fail ||
+	--silent ||
 	{
-		printf '::error::Vulnerability alerts are disabled for %s.\n' "${REPO}"
+		printf '::error::Could not verify vulnerability alerts for %s; check the token permissions and repository settings.\n' "${REPO}"
 		printf '::error::Enable at: https://github.com/%s/settings/security_analysis\n' "${REPO}"
 		exit 1
 	}
