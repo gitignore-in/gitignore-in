@@ -18,4 +18,4 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: gitignore-in/gh-action@98ab8a7225c88b81167bfef156dbad83c554aaf4 # v0.2.3
+      - uses: gitignore-in/gh-action@497638056b4abf3bc97f007e091b451633904f2f # v0.2.4
