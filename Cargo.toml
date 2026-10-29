@@ -1,6 +1,6 @@
 [package]
 name = "gitignore-in"
-version = "0.2.2"
+version = "0.2.3-dev"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Yui Kitsu <kitsuyui+github@kitsuyui.com>"]
