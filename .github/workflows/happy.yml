@@ -18,6 +18,6 @@ jobs:
     name: happy
     continue-on-error: true
     steps:
-      - uses: kitsuyui/happy-commit@b8724714862e1b643122b8f233b3aaca26b9825d # v0.9
+      - uses: kitsuyui/happy-commit@5723d586c8ddb4908f77601aa0bb86d08f7283f5 # v0.10.0
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
