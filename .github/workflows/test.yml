@@ -34,7 +34,7 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: gitignore-in/install-gibo@9e7dba9e59f184b41f542669b0864687a6f69b45 # v0.1.0
+      - uses: gitignore-in/install-gibo@4d380b7e0c027c84d237b8411d7111ff0e88cd62 # v0.2.0
       - run: cargo test
 
   format:
