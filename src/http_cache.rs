@@ -11,11 +11,15 @@ fn fnv1a(s: &str) -> u64 {
 }
 
 fn resolve_cache_dir() -> Option<PathBuf> {
-    if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
-        return Some(PathBuf::from(xdg).join("gitignore-in"));
-    }
-    let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".cache").join("gitignore-in"))
+    std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .filter(|xdg| Path::new(xdg).is_absolute())
+        .map(|xdg| PathBuf::from(xdg).join("gitignore-in"))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|home| PathBuf::from(home).join(".cache").join("gitignore-in"))
+        })
 }
 
 fn body_path(dir: &Path, hash: u64) -> PathBuf {
@@ -101,6 +105,44 @@ fn atomic_write(dir: &Path, dest: &Path, data: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        ffi::OsString,
+        sync::{Mutex, OnceLock},
+    };
+
+    fn environment_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvironmentGuard {
+        xdg_cache_home: Option<OsString>,
+        home: Option<OsString>,
+    }
+
+    impl EnvironmentGuard {
+        fn capture() -> Self {
+            Self {
+                xdg_cache_home: std::env::var_os("XDG_CACHE_HOME"),
+                home: std::env::var_os("HOME"),
+            }
+        }
+    }
+
+    impl Drop for EnvironmentGuard {
+        fn drop(&mut self) {
+            restore_environment_variable("XDG_CACHE_HOME", self.xdg_cache_home.take());
+            restore_environment_variable("HOME", self.home.take());
+        }
+    }
+
+    fn restore_environment_variable(name: &str, value: Option<OsString>) {
+        if let Some(value) = value {
+            std::env::set_var(name, value);
+        } else {
+            std::env::remove_var(name);
+        }
+    }
 
     #[test]
     fn test_fnv1a_differs_by_url() {
@@ -171,5 +213,31 @@ mod tests {
         );
         assert!(get_from_dir(tmp.path(), url_b).is_none());
         assert!(get_from_dir(tmp.path(), url_a).is_some());
+    }
+
+    #[test]
+    fn test_resolve_cache_dir_uses_absolute_xdg_cache_home() {
+        let _lock = environment_lock().lock().unwrap();
+        let _environment = EnvironmentGuard::capture();
+        let xdg = tempfile::tempdir().unwrap();
+
+        std::env::set_var("XDG_CACHE_HOME", xdg.path());
+        std::env::set_var("HOME", "/unused-home");
+
+        assert_eq!(resolve_cache_dir(), Some(xdg.path().join("gitignore-in")));
+    }
+
+    #[test]
+    fn test_resolve_cache_dir_ignores_empty_and_relative_xdg_cache_home() {
+        let _lock = environment_lock().lock().unwrap();
+        let _environment = EnvironmentGuard::capture();
+        let home = tempfile::tempdir().unwrap();
+        let expected = home.path().join(".cache").join("gitignore-in");
+
+        std::env::set_var("HOME", home.path());
+        for xdg in ["", "relative-cache"] {
+            std::env::set_var("XDG_CACHE_HOME", xdg);
+            assert_eq!(resolve_cache_dir(), Some(expected.clone()));
+        }
     }
 }
