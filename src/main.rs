@@ -463,8 +463,10 @@ fn update_gitignore_in_file(
         Err(e) => return Err(e),
     }
 
-    let line_ending = detect_gitignore_in_line_ending()?;
-    let mut script = parse_gitignore_in_file()?;
+    let path = Path::new(".gitignore.in");
+    let content = read_path_to_string(path)?;
+    let line_ending = edit::LineEnding::detect(&content);
+    let mut script = parser::parse_text(&content);
     let invalid: Vec<String> = script
         .content
         .iter()
@@ -501,18 +503,17 @@ fn update_gitignore_in_file(
     Ok(changed)
 }
 
-fn detect_gitignore_in_line_ending() -> std::io::Result<edit::LineEnding> {
-    let mut content = String::new();
-    std::fs::File::open(".gitignore.in")?.read_to_string(&mut content)?;
-    Ok(edit::LineEnding::detect(&content))
-}
-
 fn parse_gitignore_in_file() -> std::io::Result<script::GitIgnoreIn> {
     let path = std::path::Path::new(".gitignore.in");
     parse_path(path)
 }
 
 fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
+    let content = read_path_to_string(path)?;
+    Ok(parser::parse_text(&content))
+}
+
+fn read_path_to_string(path: &Path) -> std::io::Result<String> {
     let file = std::fs::File::open(path)?;
     let mut content = String::new();
     file.take(MAX_FILE_BYTES + 1).read_to_string(&mut content)?;
@@ -525,8 +526,7 @@ fn parse_path(path: &Path) -> std::io::Result<script::GitIgnoreIn> {
             ),
         ));
     }
-    let result = parser::parse_text(&content);
-    Ok(result)
+    Ok(content)
 }
 
 fn gitignore_in_template_header() -> String {
@@ -776,6 +776,28 @@ mod tests {
         let err = parse_path(&path).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("exceeds size limit"));
+    }
+
+    #[test]
+    fn update_gitignore_in_file_rejects_oversized_input_before_editing() {
+        let temp_dir = TempDir::new().expect("failed to create temp dir");
+        let _guard = CwdGuard::new(temp_dir.path());
+        let oversized = "x".repeat((MAX_FILE_BYTES + 1) as usize);
+        std::fs::write(".gitignore.in", &oversized).expect("failed to write .gitignore.in");
+
+        let err = update_gitignore_in_file(
+            UpdateMode::Remove,
+            vec!["Rust".to_string()],
+            &Progress::new(true),
+        )
+        .expect_err("oversized input should be rejected before editing");
+
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("exceeds size limit"));
+        assert_eq!(
+            std::fs::read_to_string(".gitignore.in").expect("failed to read oversized file"),
+            oversized
+        );
     }
 
     #[test]
