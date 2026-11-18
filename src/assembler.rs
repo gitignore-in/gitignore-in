@@ -14,19 +14,49 @@ pub(crate) struct TemplateCache {
     pub gi: std::collections::HashMap<String, String>,
 }
 
+const MAX_TEMPLATE_CACHE_BYTES: usize = 200 * 1024 * 1024;
+const MAX_GENERATED_OUTPUT_BYTES: usize = 200 * 1024 * 1024;
+
+#[derive(Clone, Copy)]
+struct BuildLimits {
+    cache_bytes: usize,
+    output_bytes: usize,
+}
+
+impl Default for BuildLimits {
+    fn default() -> Self {
+        Self {
+            cache_bytes: MAX_TEMPLATE_CACHE_BYTES,
+            output_bytes: MAX_GENERATED_OUTPUT_BYTES,
+        }
+    }
+}
+
 fn build_with(
     script: GitIgnoreIn,
     load_gibo: impl Fn(&str) -> std::io::Result<String>,
     load_gi: impl Fn(&str) -> std::io::Result<String>,
     seed: TemplateCache,
 ) -> std::io::Result<String> {
+    build_with_limits(script, load_gibo, load_gi, seed, BuildLimits::default())
+}
+
+fn build_with_limits(
+    script: GitIgnoreIn,
+    load_gibo: impl Fn(&str) -> std::io::Result<String>,
+    load_gi: impl Fn(&str) -> std::io::Result<String>,
+    seed: TemplateCache,
+    limits: BuildLimits,
+) -> std::io::Result<String> {
     let mut result = String::new();
     for line in GENERATED_HEADER_LINES {
-        result.push_str(line);
-        result.push('\n');
+        append_generated_output(&mut result, line, limits.output_bytes)?;
+        append_generated_output(&mut result, "\n", limits.output_bytes)?;
     }
     let mut gibo_cache = seed.gibo;
     let mut gi_cache = seed.gi;
+    let mut cache_bytes = template_cache_bytes(&gibo_cache, &gi_cache);
+    check_aggregate_size(cache_bytes, limits.cache_bytes, "template cache")?;
     for statement in script.content {
         match statement {
             GitIgnoreStatement::Comment(Comment::Content(c)) => {
@@ -35,38 +65,58 @@ fn build_with(
                 // .gitignore.  This double-hash is the encoding contract that
                 // restore() relies on to distinguish user comments from
                 // section headers (`# gibo dump …` / `# gi …`).
-                result.push_str(&format!("# {c}\n"));
+                append_generated_output(&mut result, &format!("# {c}\n"), limits.output_bytes)?;
             }
             GitIgnoreStatement::Meaningless(Meaningless::Content(m)) => {
                 if m.is_empty() {
-                    result.push('\n');
+                    append_generated_output(&mut result, "\n", limits.output_bytes)?;
                 }
             }
             GitIgnoreStatement::Gibo(Gibo::Target(target)) => {
-                let content = if let Some(cached) = gibo_cache.get(&target) {
-                    cached.clone()
-                } else {
-                    let fetched = load_gibo(&target)?;
-                    validate_generated_section_content("gibo dump", &target, &fetched)?;
-                    gibo_cache.insert(target.clone(), fetched.clone());
-                    fetched
+                let content = match gibo_cache.entry(target.clone()) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let fetched = load_gibo(&target)?;
+                        validate_generated_section_content("gibo dump", &target, &fetched)?;
+                        cache_bytes = checked_aggregate_size(
+                            cache_bytes,
+                            target.len().saturating_add(fetched.len()),
+                            limits.cache_bytes,
+                            "template cache",
+                        )?;
+                        entry.insert(fetched)
+                    }
                 };
-                result.push_str(&separator());
-                result.push_str(&format!("# gibo dump {target}\n"));
-                push_external_content(&mut result, &content);
+                append_generated_output(&mut result, &separator(), limits.output_bytes)?;
+                append_generated_output(
+                    &mut result,
+                    &format!("# gibo dump {target}\n"),
+                    limits.output_bytes,
+                )?;
+                push_external_content(&mut result, content, limits.output_bytes)?;
             }
             GitIgnoreStatement::Gi(Gi::Target(target)) => {
-                let content = if let Some(cached) = gi_cache.get(&target) {
-                    cached.clone()
-                } else {
-                    let fetched = load_gi(&target)?;
-                    validate_generated_section_content("gi", &target, &fetched)?;
-                    gi_cache.insert(target.clone(), fetched.clone());
-                    fetched
+                let content = match gi_cache.entry(target.clone()) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        let fetched = load_gi(&target)?;
+                        validate_generated_section_content("gi", &target, &fetched)?;
+                        cache_bytes = checked_aggregate_size(
+                            cache_bytes,
+                            target.len().saturating_add(fetched.len()),
+                            limits.cache_bytes,
+                            "template cache",
+                        )?;
+                        entry.insert(fetched)
+                    }
                 };
-                result.push_str(&separator());
-                result.push_str(&format!("# gi {target}\n"));
-                push_external_content(&mut result, &content);
+                append_generated_output(&mut result, &separator(), limits.output_bytes)?;
+                append_generated_output(
+                    &mut result,
+                    &format!("# gi {target}\n"),
+                    limits.output_bytes,
+                )?;
+                push_external_content(&mut result, content, limits.output_bytes)?;
             }
             GitIgnoreStatement::Echo(Echo::Content(echo)) => {
                 if echo.starts_with("# gibo dump ") || echo.starts_with("# gi ") {
@@ -78,8 +128,8 @@ fn build_with(
                         ),
                     ));
                 }
-                result.push_str(&separator());
-                result.push_str(&format!("{echo}\n"));
+                append_generated_output(&mut result, &separator(), limits.output_bytes)?;
+                append_generated_output(&mut result, &format!("{echo}\n"), limits.output_bytes)?;
             }
             GitIgnoreStatement::Invalid(Invalid::Line { reason, .. }) => {
                 return Err(std::io::Error::new(
@@ -100,15 +150,66 @@ pub(crate) fn build_with_seed(script: GitIgnoreIn, seed: TemplateCache) -> std::
     build_with(script, gibo_command, gi_command, seed)
 }
 
-fn push_external_content(result: &mut String, content: &str) {
-    result.push_str(content);
+fn push_external_content(
+    result: &mut String,
+    content: &str,
+    output_limit: usize,
+) -> std::io::Result<()> {
+    append_generated_output(result, content, output_limit)?;
     if !content.ends_with('\n') {
-        result.push('\n');
+        append_generated_output(result, "\n", output_limit)?;
     }
+    Ok(())
 }
 
 fn separator() -> String {
     format!("{SEPARATOR}\n")
+}
+
+fn template_cache_bytes(
+    gibo_cache: &std::collections::HashMap<String, String>,
+    gi_cache: &std::collections::HashMap<String, String>,
+) -> usize {
+    gibo_cache
+        .iter()
+        .chain(gi_cache)
+        .fold(0, |total, (target, content)| {
+            total.saturating_add(target.len().saturating_add(content.len()))
+        })
+}
+
+fn append_generated_output(
+    result: &mut String,
+    content: &str,
+    output_limit: usize,
+) -> std::io::Result<()> {
+    check_aggregate_size(
+        result.len().saturating_add(content.len()),
+        output_limit,
+        "generated output",
+    )?;
+    result.push_str(content);
+    Ok(())
+}
+
+fn checked_aggregate_size(
+    current: usize,
+    added: usize,
+    limit: usize,
+    subject: &str,
+) -> std::io::Result<usize> {
+    let total = current.saturating_add(added);
+    check_aggregate_size(total, limit, subject)?;
+    Ok(total)
+}
+
+fn check_aggregate_size(total: usize, limit: usize, subject: &str) -> std::io::Result<()> {
+    if total > limit {
+        return Err(std::io::Error::other(format!(
+            "aggregate {subject} exceeds {limit} bytes"
+        )));
+    }
+    Ok(())
 }
 
 fn validate_generated_section_content(
@@ -220,6 +321,93 @@ echo hello
     }
 
     #[test]
+    fn cache_is_scoped_to_a_single_build() {
+        let gi_loads = std::cell::Cell::new(0);
+        for _ in 0..2 {
+            let script = parse_text("gi Rust\n");
+            build_with(
+                script,
+                |_| Err(std::io::Error::other("no gibo")),
+                |_| {
+                    gi_loads.set(gi_loads.get() + 1);
+                    Ok("# Rust content\n".to_string())
+                },
+                Default::default(),
+            )
+            .unwrap();
+        }
+        assert_eq!(gi_loads.get(), 2);
+    }
+
+    #[test]
+    fn build_rejects_seed_cache_over_aggregate_limit() {
+        let seed = TemplateCache {
+            gibo: std::collections::HashMap::from([("Rust".to_string(), "content".to_string())]),
+            gi: Default::default(),
+        };
+        let err = build_with_limits(
+            parse_text(""),
+            |_| Err(std::io::Error::other("no gibo")),
+            |_| Err(std::io::Error::other("no gi")),
+            seed,
+            BuildLimits {
+                cache_bytes: 10,
+                output_bytes: usize::MAX,
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("aggregate template cache exceeds"));
+    }
+
+    #[test]
+    fn build_rejects_new_cache_entry_over_aggregate_limit() {
+        let err = build_with_limits(
+            parse_text("gi Rust\n"),
+            |_| Err(std::io::Error::other("no gibo")),
+            |_| Ok("content".to_string()),
+            Default::default(),
+            BuildLimits {
+                cache_bytes: 10,
+                output_bytes: usize::MAX,
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("aggregate template cache exceeds"));
+    }
+
+    #[test]
+    fn build_rejects_output_over_aggregate_limit() {
+        let header = build_with_limits(
+            parse_text(""),
+            |_| Err(std::io::Error::other("no gibo")),
+            |_| Err(std::io::Error::other("no gi")),
+            Default::default(),
+            BuildLimits {
+                cache_bytes: usize::MAX,
+                output_bytes: usize::MAX,
+            },
+        )
+        .unwrap();
+        let err = build_with_limits(
+            parse_text("echo hello\n"),
+            |_| Err(std::io::Error::other("no gibo")),
+            |_| Err(std::io::Error::other("no gi")),
+            Default::default(),
+            BuildLimits {
+                cache_bytes: usize::MAX,
+                output_bytes: header.len(),
+            },
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("aggregate generated output exceeds"));
+    }
+
+    #[test]
     fn gibo_loader_error_propagates() {
         let text = "gibo dump Rust\n";
         let script = parse_text(text);
@@ -270,7 +458,7 @@ echo hello
     #[test]
     fn external_content_without_trailing_newline_stays_line_delimited() {
         let mut result = String::new();
-        push_external_content(&mut result, "*.swp");
+        push_external_content(&mut result, "*.swp", usize::MAX).unwrap();
         result.push_str(&separator());
 
         assert_eq!(result, "*.swp\n# -----------------------------------------------------------------------------\n");
@@ -279,7 +467,7 @@ echo hello
     #[test]
     fn external_content_with_trailing_newline_is_not_changed() {
         let mut result = String::new();
-        push_external_content(&mut result, "*.swp\n");
+        push_external_content(&mut result, "*.swp\n", usize::MAX).unwrap();
         result.push_str(&separator());
 
         assert_eq!(result, "*.swp\n# -----------------------------------------------------------------------------\n");
